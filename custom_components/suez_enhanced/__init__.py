@@ -21,18 +21,18 @@ class SuezCoordinator(DataUpdateCoordinator):
         client = SuezClient(data["username"], data["password"], data[CONF_COUNTER_ID])
         try:
             await client._connect()
-            today = date.today()
+            today = __import__("homeassistant.util.dt", fromlist=["now"]).now().date()
             measures = await client.fetch_telemetry(TelemetryMode.DAILY, today - td(days=14), today)
             valid = [m for m in measures if m.index is not None]
             if not valid:
                 raise UpdateFailed("No valid SUEZ meter index returned")
             latest = max(valid, key=lambda m: m.date)
             yesterday = next((m for m in measures if m.date == today - td(days=1)), None)
-            # Safe default: diagnostic only. Write mode must be explicitly
-            # enabled in entry options after a verified HA backup.
-            # Any continuity error must not interrupt the meter sensors.
+            # Automatic by default only when the legacy series passes all
+            # compatibility checks. Users may disable it in integration options.
+            # Continuity errors must not interrupt the meter sensors.
             try:
-                write_enabled = self.entry.options.get("history_sync_enabled", False) is True
+                write_enabled = self.entry.options.get("history_sync_enabled", True) is True
                 preview = await async_continue_history(
                     self.hass, str(data[CONF_COUNTER_ID]), measures,
                     write=write_enabled,
