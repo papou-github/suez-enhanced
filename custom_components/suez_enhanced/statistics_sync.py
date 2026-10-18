@@ -64,11 +64,14 @@ async def async_continue_history(hass, counter_id: str, measures: list, *,
     # Europe/Paris midnight, e.g. 2026-10-16 22:00Z = Oct 17 midnight.
     last_day = last_start.astimezone(PARIS).date() - timedelta(days=1)
     today = datetime.now(PARIS).date()
+    # SUEZ can publish provisional zero readings. Allow two full days
+    # for telemetry to settle before importing into permanent statistics.
+    latest_eligible_day = today - timedelta(days=2)
     readings = daily_readings(measures)
     expected = last_day + timedelta(days=1)
     selected = []
     for reading in readings:
-        if reading.day < expected or reading.day >= today:
+        if reading.day < expected or reading.day > latest_eligible_day:
             continue
         if reading.day != expected:
             break
@@ -90,6 +93,7 @@ async def async_continue_history(hass, counter_id: str, measures: list, *,
         "last_recorded_day": last_day.isoformat(),
         "last_sum_liters": float(last["sum"]),
         "new_days": len(statistics),
+        "latest_eligible_day": latest_eligible_day.isoformat(),
         "first_new_day": selected[0].day.isoformat() if selected else None,
         "last_new_day": selected[-1].day.isoformat() if selected else None,
         "new_sum_liters": cumulative,
