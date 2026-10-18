@@ -6,6 +6,10 @@ from pysuez.suez_client import SuezClient
 from .const import DOMAIN, CONF_COUNTER_ID
 
 class SuezEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        return SuezEnhancedOptionsFlow()
+
     VERSION = 1
 
     async def async_step_user(self, user_input=None):
@@ -27,3 +31,20 @@ class SuezEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await client.close_session()
         schema = vol.Schema({vol.Required(CONF_USERNAME): str, vol.Required(CONF_PASSWORD): str})
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+
+class SuezEnhancedOptionsFlow(config_entries.OptionsFlow):
+    """Allow users to disable automatic historical continuity."""
+
+    async def async_step_init(self, user_input=None):
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(
+                    "history_sync_enabled",
+                    default=self.config_entry.options.get("history_sync_enabled", True),
+                ): bool,
+            }),
+        )
