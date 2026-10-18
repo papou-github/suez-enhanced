@@ -7,6 +7,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from pysuez.suez_client import SuezClient, TelemetryMode
 from datetime import date, timedelta as td
 from .const import DOMAIN, PLATFORMS, CONF_COUNTER_ID
+from .statistics_sync import async_continue_history
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +28,19 @@ class SuezCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed("No valid SUEZ meter index returned")
             latest = max(valid, key=lambda m: m.date)
             yesterday = next((m for m in measures if m.date == today - td(days=1)), None)
+            # Preview only: never write to recorder from the polling coordinator.
+            # Any compatibility or historical-data error must not interrupt
+            # the normal meter index and yesterday sensors.
+            try:
+                preview = await async_continue_history(
+                    self.hass, str(data[CONF_COUNTER_ID]), measures, write=False
+                )
+                _LOGGER.info("SUEZ historical continuity dry run: %s", preview)
+            except Exception as exc:
+                _LOGGER.warning(
+                    "SUEZ historical continuity dry run unavailable: %s: %s",
+                    type(exc).__name__, exc,
+                )
             return {"index": latest.index / 1000, "index_date": latest.date.isoformat(), "yesterday": yesterday.volume if yesterday and yesterday.volume is not None else None}
         except Exception as exc:
             raise UpdateFailed(f"SUEZ API request failed: {type(exc).__name__}") from exc
