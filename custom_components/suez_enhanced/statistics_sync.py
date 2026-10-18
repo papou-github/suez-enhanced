@@ -47,7 +47,7 @@ async def async_continue_history(hass, counter_id: str, measures: list, *,
     """
     statistic_id = legacy_statistic_id(counter_id)
     existing = await get_instance(hass).async_add_executor_job(
-        get_last_statistics, hass, 1, statistic_id, True, set()
+        get_last_statistics, hass, 1, statistic_id, False, {"sum", "state"}
     )
     if not existing or not existing.get(statistic_id):
         raise ValueError("Historical SUEZ statistics not found; refusing to create")
