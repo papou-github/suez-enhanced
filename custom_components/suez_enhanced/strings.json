@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to SUEZ",
+        "description": "The meter is detected automatically.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect or discover a meter"
+    },
+    "abort": {
+      "already_configured": "Meter already configured"
+    }
+  }
+}
