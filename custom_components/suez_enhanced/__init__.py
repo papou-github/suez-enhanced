@@ -28,17 +28,19 @@ class SuezCoordinator(DataUpdateCoordinator):
                 raise UpdateFailed("No valid SUEZ meter index returned")
             latest = max(valid, key=lambda m: m.date)
             yesterday = next((m for m in measures if m.date == today - td(days=1)), None)
-            # Preview only: never write to recorder from the polling coordinator.
-            # Any compatibility or historical-data error must not interrupt
-            # the normal meter index and yesterday sensors.
+            # Safe default: diagnostic only. Write mode must be explicitly
+            # enabled in entry options after a verified HA backup.
+            # Any continuity error must not interrupt the meter sensors.
             try:
+                write_enabled = self.entry.options.get("history_sync_enabled", False) is True
                 preview = await async_continue_history(
-                    self.hass, str(data[CONF_COUNTER_ID]), measures, write=False
+                    self.hass, str(data[CONF_COUNTER_ID]), measures,
+                    write=write_enabled,
                 )
-                _LOGGER.info("SUEZ historical continuity dry run: %s", preview)
+                _LOGGER.info("SUEZ historical continuity result: %s", preview)
             except Exception as exc:
                 _LOGGER.warning(
-                    "SUEZ historical continuity dry run unavailable: %s: %s",
+                    "SUEZ historical continuity unavailable: %s: %s",
                     type(exc).__name__, exc,
                 )
             return {"index": latest.index / 1000, "index_date": latest.date.isoformat(), "yesterday": yesterday.volume if yesterday and yesterday.volume is not None else None}
