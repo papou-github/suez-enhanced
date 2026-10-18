@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à SUEZ",
+        "description": "Le compteur est détecté automatiquement.",
+        "data": {
+          "username": "Adresse e-mail",
+          "password": "Mot de passe"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Connexion ou détection du compteur impossible"
+    },
+    "abort": {
+      "already_configured": "Compteur déjà configuré"
+    }
+  }
+}
