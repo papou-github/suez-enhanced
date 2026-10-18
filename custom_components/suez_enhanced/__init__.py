@@ -5,7 +5,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from pysuez.suez_client import SuezClient, TelemetryMode
-from datetime import date, timedelta as td
+from datetime import timedelta as td
+from homeassistant.util import dt as dt_util
 from .const import DOMAIN, PLATFORMS, CONF_COUNTER_ID
 from .statistics_sync import async_continue_history
 
@@ -21,7 +22,7 @@ class SuezCoordinator(DataUpdateCoordinator):
         client = SuezClient(data["username"], data["password"], data[CONF_COUNTER_ID])
         try:
             await client._connect()
-            today = __import__("homeassistant.util.dt", fromlist=["now"]).now().date()
+            today = dt_util.now().date()
             measures = await client.fetch_telemetry(TelemetryMode.DAILY, today - td(days=14), today)
             valid = [m for m in measures if m.index is not None]
             if not valid:
