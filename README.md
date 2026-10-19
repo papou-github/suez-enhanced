@@ -1,27 +1,46 @@
 # SUEZ Enhanced
 
-Intégration personnalisée Home Assistant pour le portail Tout sur mon Eau (SUEZ).
+Intégration personnalisée Home Assistant pour le portail **Tout sur mon Eau (SUEZ)**, distribuée via HACS.
 
-**Version 0.1.0 — expérimentale.** Ne remplacez pas une source existante du tableau de bord Énergie avant validation de l'index et de ses statistiques.
+> Projet communautaire non officiel : l'API SUEZ peut évoluer. Ne communiquez jamais vos identifiants ni vos journaux sans anonymisation.
 
-## Installation HACS
+## Installation via HACS
 
-Ajoutez `https://github.com/papou-github/suez-enhanced` comme dépôt personnalisé de type **Integration** dans HACS, installez puis redémarrez Home Assistant. Ajoutez **SUEZ Enhanced** dans Paramètres > Appareils et services.
+1. Dans HACS, ouvrez les **dépôts personnalisés** et ajoutez `https://github.com/papou-github/suez-enhanced` comme **Integration**.
+2. Téléchargez SUEZ Enhanced et **redémarrez Home Assistant Core** après installation ou mise à jour du code.
+3. Dans **Paramètres → Appareils et services**, ajoutez **SUEZ Enhanced** et connectez-vous avec les identifiants du portail SUEZ.
+4. Le numéro de compteur est détecté automatiquement.
 
-## Capteurs
+## Entités
 
-- **Meter index** : index réel du compteur en m³, `state_class: total_increasing`, destiné au tableau de bord Énergie.
-- **Water usage yesterday** : volume du jour précédent en litres, quand disponible.
+- **Meter index** : index du compteur en m³ (`total_increasing`).
+- **Water usage yesterday** : volume de la veille en litres.
 
-Le compteur est découvert automatiquement. Rafraîchissement toutes les six heures. L'index provient de la dernière mesure quotidienne disposant d'un index valide sur les 14 derniers jours.
+L'API est interrogée toutes les **6 heures**.
+
+## Historique du tableau Énergie
+
+L'intégration recherche la série historique existante `suez_water:<compteur>_water_consumption_statistics`, puis y ajoute les journées complètes manquantes. La synchronisation est **activée par défaut** et désactivable dans **Paramètres → Appareils et services → SUEZ Enhanced → Configurer**.
+
+Protections : pas de création d'une nouvelle série si l'ancienne n'existe pas, pas de remplacement des anciens relevés, uniquement les journées consécutives, délai de sécurité de deux jours avant import. La série historique reste en **litres**. L'index du compteur en m³ est une autre entité : **ne l'ajoutez pas comme deuxième source d'eau dans Énergie si la série historique est déjà sélectionnée**, sinon les volumes risquent d'être comptés deux fois.
+
+Avant la première activation de l'écriture dans les statistiques, effectuez une **sauvegarde complète Home Assistant**. Les journaux de diagnostic sont disponibles avec :
+
+```bash
+ha core logs | grep -iE 'SUEZ historical continuity|SUEZ statistics continuity'
+```
+
+## Mises à jour
+
+Les **données de consommation** se synchronisent automatiquement toutes les six heures. **HACS** peut détecter les nouvelles versions du code, mais leur installation dépend de votre configuration HACS ; un **redémarrage de Home Assistant Core** est nécessaire pour charger les nouveaux modules Python. Pour la sécurité des statistiques, aucune installation ni aucun redémarrage forcé n'est déclenché par cette intégration.
+
+## Développement et validation
+
+Les workflows GitHub Actions exécutent la validation HACS, hassfest et des contrôles Python/JSON à chaque push ou pull request. Les résultats doivent être consultés dans l'onglet **Actions** du dépôt ; leur présence ne signifie pas qu'ils ont déjà réussi.
 
 ## Limitations
 
 - API SUEZ non officielle, susceptible de changer.
-- Une seule découverte automatique de compteur par compte est actuellement prise en charge.
-- Les consommations mensuelles/annuelles et le prix de l'eau sont prévus pour une version ultérieure.
-- La première publication du capteur d'index ne reconstitue pas automatiquement les statistiques historiques du tableau de bord Énergie.
-
-## Confidentialité
-
-Les identifiants sont stockés dans l'entrée de configuration de Home Assistant. Ne publiez jamais vos journaux contenant des informations personnelles sans les masquer.
+- Découverte d'un seul compteur par configuration.
+- La reprise historique suppose une série créée auparavant par l'intégration SUEZ d'origine ; les nouvelles installations sans historique peuvent utiliser le capteur d'index.
+- Les relevés journaliers restent soumis aux délais et éventuelles corrections du portail SUEZ.
