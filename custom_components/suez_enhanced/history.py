@@ -1,12 +1,9 @@
-"""Read-only SUEZ history continuity diagnostics.
-
-No recorder writes are performed by this module. It is deliberately safe to
-ship before implementing the opt-in historical-statistics writer.
-"""
+"""Validation and selection of SUEZ daily readings (no recorder writes)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from math import isfinite
 from zoneinfo import ZoneInfo
 
 PARIS = ZoneInfo("Europe/Paris")
@@ -20,22 +17,20 @@ class DailyReading:
 
 
 def daily_readings(measures: list) -> list[DailyReading]:
-    """Normalize daily telemetry, reject duplicates and invalid readings."""
+    """Reject contradictory, negative, non-finite and inconsistent telemetry."""
     by_day: dict[date, DailyReading] = {}
     for measure in measures:
         day = measure.date
         if isinstance(day, datetime):
-            day = day.date()
+            day = day.astimezone(PARIS).date() if day.tzinfo else day.date()
         if not isinstance(day, date):
             continue
         volume = measure.volume
-        if volume is None or not isinstance(volume, (int, float)):
-            continue
-        if volume < 0 or volume != volume or volume == float("inf"):
+        if not isinstance(volume, (int, float)) or not isfinite(volume) or volume < 0:
             continue
         index = measure.index
         if index is not None and (
-            not isinstance(index, (int, float)) or index < 0
+            not isinstance(index, (int, float)) or not isfinite(index) or index < 0
         ):
             index = None
         candidate = DailyReading(day, float(volume), float(index) if index is not None else None)
@@ -45,23 +40,35 @@ def daily_readings(measures: list) -> list[DailyReading]:
     return sorted(by_day.values(), key=lambda reading: reading.day)
 
 
-def missing_complete_days(
-    readings: list[DailyReading], last_recorded_day: date, today: date
+def select_consecutive(
+    readings: list[DailyReading], last_day: date, latest_eligible_day: date
 ) -> list[DailyReading]:
-    """Return complete new days only; never fill missing days with zero."""
-    new = [r for r in readings if last_recorded_day < r.day < today]
-    expected = last_recorded_day + timedelta(days=1)
-    result: list[DailyReading] = []
-    for reading in new:
-        if reading.day != expected:
-            break
-        result.append(reading)
-        expected += timedelta(days=1)
-    return result
+    """Stop at first missing date; never synthesize zero consumption."""
+    by_day = {reading.day: reading for reading in readings}
+    selected = []
+    day = last_day + timedelta(days=1)
+    while day <= latest_eligible_day and day in by_day:
+        selected.append(by_day[day])
+        day += timedelta(days=1)
+    return selected
+
+
+def validate_index_deltas(
+    readings: list[DailyReading], *, tolerance_liters: float = 2.0
+) -> None:
+    """Refuse inconsistent consecutive index/volume pairs when indices exist."""
+    for previous, current in zip(readings, readings[1:]):
+        if current.day != previous.day + timedelta(days=1):
+            continue
+        if previous.meter_index_liters is None or current.meter_index_liters is None:
+            continue
+        delta = current.meter_index_liters - previous.meter_index_liters
+        if delta < 0 or abs(delta - current.liters) > tolerance_liters:
+            raise ValueError(f"Index/volume mismatch for {current.day}")
 
 
 def local_midnight_utc(day: date) -> datetime:
-    """Daily statistics use the beginning of the next local calendar day."""
-    return datetime.combine(day + timedelta(days=1), datetime.min.time(), PARIS).astimezone(
-        ZoneInfo("UTC")
-    )
+    """A daily volume is stored at the next midnight in Europe/Paris."""
+    return datetime.combine(
+        day + timedelta(days=1), datetime.min.time(), PARIS
+    ).astimezone(timezone.utc)
