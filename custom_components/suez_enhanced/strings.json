@@ -22,10 +22,12 @@
       "init": {
         "title": "SUEZ history synchronization",
         "data": {
-          "history_sync_enabled": "Automatic historical statistics synchronization"
+          "history_sync_enabled": "Automatic historical statistics synchronization",
+          "price_per_m3": "Water price (€/m³)"
         },
         "data_description": {
-          "history_sync_enabled": "Continue compatible SUEZ historical statistics after a two-day safety delay."
+          "history_sync_enabled": "Continue compatible SUEZ historical statistics after a two-day safety delay.",
+          "price_per_m3": "Estimated EUR per cubic meter, optionally including wastewater charges. Set 0 to disable cost estimate."
         }
       }
     }
