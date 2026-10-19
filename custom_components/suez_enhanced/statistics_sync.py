@@ -31,6 +31,23 @@ def legacy_statistic_id(counter_id: str) -> str:
     return f"{LEGACY_SOURCE}:{counter_id}_water_consumption_statistics"
 
 
+async def async_last_history_day(hass, counter_id: str):
+    """Return the last imported day, or None if no legacy history exists."""
+    statistic_id = legacy_statistic_id(counter_id)
+    existing = await get_instance(hass).async_add_executor_job(
+        get_last_statistics, hass, 1, statistic_id, False, {"sum", "state"}
+    )
+    if not existing or not existing.get(statistic_id):
+        return None
+    last = existing[statistic_id][0]
+    if last.get("start") is None:
+        return None
+    timestamp = datetime.fromtimestamp(last["start"], tz=timezone.utc)
+    if timestamp.astimezone(PARIS).time() != datetime.min.time():
+        raise ValueError("Legacy history is not aligned to Paris midnight")
+    return timestamp.astimezone(PARIS).date() - timedelta(days=1)
+
+
 async def async_continue_history(hass, counter_id: str, measures: list, *, write: bool = False) -> dict:
     """Append complete consecutive days to an existing compatible legacy series."""
     statistic_id = legacy_statistic_id(counter_id)
