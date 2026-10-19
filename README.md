@@ -1,46 +1,119 @@
 # SUEZ Enhanced
 
-Intégration personnalisée Home Assistant pour le portail **Tout sur mon Eau (SUEZ)**, distribuée via HACS.
+[🇫🇷 Français](#français) · [🇬🇧 English](#english)
 
-> Projet communautaire non officiel : l'API SUEZ peut évoluer. Ne communiquez jamais vos identifiants ni vos journaux sans anonymisation.
+---
 
-## Installation via HACS
+## Français
 
-1. Dans HACS, ouvrez les **dépôts personnalisés** et ajoutez `https://github.com/papou-github/suez-enhanced` comme **Integration**.
-2. Téléchargez SUEZ Enhanced et **redémarrez Home Assistant Core** après installation ou mise à jour du code.
-3. Dans **Paramètres → Appareils et services**, ajoutez **SUEZ Enhanced** et connectez-vous avec les identifiants du portail SUEZ.
-4. Le numéro de compteur est détecté automatiquement.
+**SUEZ Enhanced** est une intégration personnalisée pour Home Assistant qui récupère les relevés du portail **Tout sur mon Eau (SUEZ)** et peut prolonger les statistiques historiques de consommation d'eau utilisées par le tableau de bord Énergie.
 
-## Entités
+> **Avertissement :** projet communautaire non officiel, non affilié à SUEZ. L'API utilisée peut changer. Effectuez une sauvegarde Home Assistant avant toute première synchronisation de statistiques historiques.
 
-- **Meter index** : index du compteur en m³ (`total_increasing`).
-- **Water usage yesterday** : volume de la veille en litres.
+### Installation avec HACS
 
-L'API est interrogée toutes les **6 heures**.
+1. Dans **HACS → Dépôts personnalisés**, ajoutez `https://github.com/papou-github/suez-enhanced` comme dépôt de type **Integration**.
+2. Installez **SUEZ Enhanced**, puis **redémarrez Home Assistant Core**.
+3. Ouvrez **Paramètres → Appareils et services → Ajouter une intégration → SUEZ Enhanced**.
+4. Saisissez les identifiants du portail SUEZ. Le compteur est détecté automatiquement.
 
-## Historique du tableau Énergie
+### Capteurs
 
-L'intégration recherche la série historique existante `suez_water:<compteur>_water_consumption_statistics`, puis y ajoute les journées complètes manquantes. La synchronisation est **activée par défaut** et désactivable dans **Paramètres → Appareils et services → SUEZ Enhanced → Configurer**.
+| Capteur | Description |
+| --- | --- |
+| **Meter index** | Index du compteur en m³ (`total_increasing`). |
+| **Water usage yesterday** | Consommation de la veille en litres, lorsqu'elle est disponible. |
 
-Protections : pas de création d'une nouvelle série si l'ancienne n'existe pas, pas de remplacement des anciens relevés, uniquement les journées consécutives, délai de sécurité de deux jours avant import. La série historique reste en **litres**. L'index du compteur en m³ est une autre entité : **ne l'ajoutez pas comme deuxième source d'eau dans Énergie si la série historique est déjà sélectionnée**, sinon les volumes risquent d'être comptés deux fois.
+Les données SUEZ sont récupérées **toutes les 6 heures**.
 
-Avant la première activation de l'écriture dans les statistiques, effectuez une **sauvegarde complète Home Assistant**. Les journaux de diagnostic sont disponibles avec :
+### Continuité de l'historique Énergie
+
+Lorsque l'ancienne série de statistiques SUEZ existe, l'intégration peut la prolonger sous son **identifiant d'origine**, par exemple `suez_water:<numéro_de_compteur>_water_consumption_statistics`. Cette synchronisation est **activée par défaut** et peut être désactivée dans les **options de l'intégration**.
+
+Protections : aucune création d'une nouvelle série historique en l'absence de l'ancienne, aucune réécriture des journées existantes, ajout des seules journées consécutives et **délai de sécurité de deux jours** avant import. Les statistiques historiques restent en **litres**.
+
+**Attention au double comptage :** si la série historique SUEZ est déjà sélectionnée dans Énergie, n'ajoutez pas aussi le capteur **Meter index** comme deuxième source d'eau du réseau.
+
+Pour les nouvelles installations sans historique SUEZ préexistant, le capteur d'index en m³ peut être utilisé comme source dans Énergie.
+
+### Diagnostic
 
 ```bash
 ha core logs | grep -iE 'SUEZ historical continuity|SUEZ statistics continuity'
 ```
 
-## Mises à jour
+### Mises à jour
 
-Les **données de consommation** se synchronisent automatiquement toutes les six heures. **HACS** peut détecter les nouvelles versions du code, mais leur installation dépend de votre configuration HACS ; un **redémarrage de Home Assistant Core** est nécessaire pour charger les nouveaux modules Python. Pour la sécurité des statistiques, aucune installation ni aucun redémarrage forcé n'est déclenché par cette intégration.
+Les **relevés** sont actualisés automatiquement toutes les 6 heures. Les **mises à jour du code** sont proposées par HACS selon sa configuration. Après une mise à jour du code Python, redémarrez **Home Assistant Core**. L'intégration ne force ni installation ni redémarrage.
 
-## Développement et validation
+### Limitations et confidentialité
 
-Les workflows GitHub Actions exécutent la validation HACS, hassfest et des contrôles Python/JSON à chaque push ou pull request. Les résultats doivent être consultés dans l'onglet **Actions** du dépôt ; leur présence ne signifie pas qu'ils ont déjà réussi.
+- API SUEZ non officielle, susceptible d'évoluer.
+- Découverte automatique d'un seul compteur par configuration.
+- La reprise historique nécessite une série SUEZ compatible déjà présente dans Home Assistant.
+- Les données publiées par SUEZ peuvent être retardées ou corrigées.
+- Les identifiants sont conservés dans l'entrée de configuration Home Assistant ; ne les publiez pas dans les journaux ou les captures.
 
-## Limitations
+### Développement
 
-- API SUEZ non officielle, susceptible de changer.
-- Découverte d'un seul compteur par configuration.
-- La reprise historique suppose une série créée auparavant par l'intégration SUEZ d'origine ; les nouvelles installations sans historique peuvent utiliser le capteur d'index.
-- Les relevés journaliers restent soumis aux délais et éventuelles corrections du portail SUEZ.
+Les workflows GitHub Actions vérifient **HACS**, **hassfest**, la syntaxe Python et les fichiers JSON. Consultez les résultats dans [GitHub Actions](https://github.com/papou-github/suez-enhanced/actions).
+
+---
+
+## English
+
+**SUEZ Enhanced** is a custom Home Assistant integration that retrieves readings from the **Tout sur mon Eau (SUEZ)** portal and can continue existing water-consumption statistics used by the Energy dashboard.
+
+> **Disclaimer:** This is an unofficial community project and is not affiliated with SUEZ. The underlying API may change. Create a full Home Assistant backup before the first historical-statistics synchronization.
+
+### Installation with HACS
+
+1. In **HACS → Custom repositories**, add `https://github.com/papou-github/suez-enhanced` as an **Integration** repository.
+2. Install **SUEZ Enhanced**, then **restart Home Assistant Core**.
+3. Open **Settings → Devices & services → Add integration → SUEZ Enhanced**.
+4. Enter your SUEZ portal credentials. The water meter is discovered automatically.
+
+### Sensors
+
+| Sensor | Description |
+| --- | --- |
+| **Meter index** | Meter reading in m³ (`total_increasing`). |
+| **Water usage yesterday** | Previous day's consumption in liters, when available. |
+
+SUEZ data is fetched **every 6 hours**.
+
+### Energy dashboard history continuity
+
+When a legacy SUEZ statistics series already exists, the integration can extend it using its **original statistics ID**, such as `suez_water:<meter_number>_water_consumption_statistics`. Synchronization is **enabled by default** and can be disabled in the **integration options**.
+
+Safeguards: no new legacy series is created if none exists, existing days are not overwritten, only consecutive missing days are appended, and readings are imported after a **two-day safety delay**. Historical statistics remain in **liters**.
+
+**Avoid double counting:** if your legacy SUEZ statistics series is already selected in the Energy dashboard, do not add **Meter index** as another mains-water source.
+
+For new installations without existing SUEZ statistics, the meter-index sensor in m³ can be used as an Energy dashboard source.
+
+### Diagnostics
+
+```bash
+ha core logs | grep -iE 'SUEZ historical continuity|SUEZ statistics continuity'
+```
+
+### Updates
+
+**Water readings** refresh automatically every 6 hours. **Integration code updates** are offered through HACS according to its settings. Restart **Home Assistant Core** after updating Python integration code. The integration does not force updates or restarts.
+
+### Limitations and privacy
+
+- Unofficial SUEZ API, subject to change.
+- Automatic discovery of one meter per configuration.
+- History continuation requires an existing compatible SUEZ statistics series.
+- SUEZ readings may be delayed or revised.
+- Credentials are stored in the Home Assistant config entry; never share them in logs or screenshots.
+
+### Development
+
+GitHub Actions workflows run **HACS**, **hassfest**, Python syntax, and JSON checks. See [GitHub Actions](https://github.com/papou-github/suez-enhanced/actions) for the current results.
+
+---
+
+MIT License · © 2026 papou-github
