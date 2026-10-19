@@ -28,7 +28,7 @@ def consumption_summary(measures: list, today: date, price_per_m3: float) -> dic
         "consumption_7d_liters": week_liters,
         "consumption_month_liters": month_liters,
         "average_daily_liters": round(week_liters / 7, 3) if week_liters is not None else None,
-        "estimated_month_cost_eur": round(month_liters / 1000 * price_per_m3, 2) if month_liters is not None else None,
+        "estimated_month_cost_eur": round(month_liters / 1000 * price_per_m3, 2) if month_liters is not None and price_per_m3 > 0 else None,
         "consumption_period_end": cutoff.isoformat(),
         "consumption_month_start": month_start.isoformat(),
     }
