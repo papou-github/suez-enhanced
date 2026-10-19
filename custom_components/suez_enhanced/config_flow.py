@@ -46,5 +46,6 @@ class SuezEnhancedOptionsFlow(config_entries.OptionsFlow):
                     "history_sync_enabled",
                     default=self.config_entry.options.get("history_sync_enabled", True),
                 ): bool,
+                vol.Required("price_per_m3", default=self.config_entry.options.get("price_per_m3", 0.0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
             }),
         )

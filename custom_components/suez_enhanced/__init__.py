@@ -10,6 +10,7 @@ from pysuez.suez_client import SuezClient, TelemetryMode
 
 from .const import DOMAIN, PLATFORMS, CONF_COUNTER_ID
 from .statistics_sync import async_continue_history, async_last_history_day
+from .consumption import consumption_summary
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -35,7 +36,7 @@ class SuezCoordinator(DataUpdateCoordinator):
         try:
             await client._connect()
             recent = await client.fetch_telemetry(
-                TelemetryMode.DAILY, today - timedelta(days=14), today
+                TelemetryMode.DAILY, today - timedelta(days=35), today
             )
             valid = [m for m in recent if m.index is not None]
             if not valid:
@@ -59,7 +60,7 @@ class SuezCoordinator(DataUpdateCoordinator):
                         0, (today - timedelta(days=2) - last_day).days
                     )
                     measures = list(recent)
-                    earliest = today - timedelta(days=14)
+                    earliest = today - timedelta(days=35)
                     if last_day < earliest:
                         # Fetch older windows chronologically, bounded to a year.
                         cursor = max(
@@ -90,7 +91,22 @@ class SuezCoordinator(DataUpdateCoordinator):
                     "SUEZ historical continuity unavailable: %s: %s",
                     type(exc).__name__, exc,
                 )
+            try:
+                summary = consumption_summary(
+                    recent, today, float(self.entry.options.get("price_per_m3", 0.0))
+                )
+            except (ValueError, TypeError) as exc:
+                _LOGGER.warning("SUEZ consumption summary unavailable: %s", exc)
+                summary = {
+                    "consumption_7d_liters": None,
+                    "consumption_month_liters": None,
+                    "average_daily_liters": None,
+                    "estimated_month_cost_eur": None,
+                    "consumption_period_end": None,
+                    "consumption_month_start": None,
+                }
             return {
+                **summary,
                 "index": latest.index / 1000,
                 "index_date": latest.date.isoformat(),
                 "yesterday": yesterday.volume if yesterday and yesterday.volume is not None else None,

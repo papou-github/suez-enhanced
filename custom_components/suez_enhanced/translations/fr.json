@@ -22,10 +22,12 @@
       "init": {
         "title": "Synchronisation de l'historique SUEZ",
         "data": {
-          "history_sync_enabled": "Synchronisation historique automatique"
+          "history_sync_enabled": "Synchronisation historique automatique",
+          "price_per_m3": "Prix de l'eau (€/m³)"
         },
         "data_description": {
-          "history_sync_enabled": "Prolonge les statistiques SUEZ existantes après un délai de sécurité de deux jours."
+          "history_sync_enabled": "Prolonge les statistiques SUEZ existantes après un délai de sécurité de deux jours.",
+          "price_per_m3": "Tarif estimatif par m³, eau et assainissement inclus si souhaité. 0 désactive l'estimation du coût."
         }
       }
     }

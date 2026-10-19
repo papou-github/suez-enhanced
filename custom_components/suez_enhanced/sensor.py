@@ -18,6 +18,15 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("history_status", "History sync status"),
         )
     )
+    sensors.extend(
+        SuezConsumptionSensor(coordinator, entry, key, name, unit)
+        for key, name, unit in (
+            ("consumption_7d_liters", "Consumption last 7 days", UnitOfVolume.LITERS),
+            ("consumption_month_liters", "Consumption this month", UnitOfVolume.LITERS),
+            ("average_daily_liters", "Daily average (7 days)", UnitOfVolume.LITERS),
+            ("estimated_month_cost_eur", "Estimated month cost", "€"),
+        )
+    )
     async_add_entities(sensors)
 
 class SuezBaseSensor(CoordinatorEntity, SensorEntity):
@@ -68,3 +77,30 @@ class SuezDiagnosticSensor(SuezBaseSensor):
     @property
     def native_value(self):
         return self.coordinator.data.get(self._key)
+
+
+class SuezConsumptionSensor(SuezBaseSensor):
+    """Read-only consumption summaries; never contributes to Energy statistics."""
+    _attr_icon = "mdi:water"
+
+    def __init__(self, coordinator, entry, key, name, unit):
+        super().__init__(coordinator, entry)
+        self._key = key
+        self._attr_name = name
+        self._attr_unique_id = f"{entry.data['counter_id']}_{key}"
+        self._attr_native_unit_of_measurement = unit
+        if key != "estimated_month_cost_eur":
+            self._attr_device_class = SensorDeviceClass.WATER
+        else:
+            self._attr_icon = "mdi:currency-eur"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get(self._key)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "period_end": self.coordinator.data.get("consumption_period_end"),
+            "month_start": self.coordinator.data.get("consumption_month_start"),
+        }
