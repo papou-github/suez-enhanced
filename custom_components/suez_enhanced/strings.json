@@ -16,5 +16,18 @@
     "abort": {
       "already_configured": "Meter already configured"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SUEZ history synchronization",
+        "data": {
+          "history_sync_enabled": "Automatic historical statistics synchronization"
+        },
+        "data_description": {
+          "history_sync_enabled": "Continue compatible SUEZ historical statistics after a two-day safety delay."
+        }
+      }
+    }
   }
 }
