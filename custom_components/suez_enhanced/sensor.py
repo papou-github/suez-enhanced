@@ -1,7 +1,7 @@
 """Sensors for SUEZ Enhanced."""
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.const import UnitOfVolume, UnitOfCurrency
+from homeassistant.const import UnitOfVolume
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
@@ -24,7 +24,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("consumption_7d_liters", "Consumption last 7 days", UnitOfVolume.LITERS),
             ("consumption_month_liters", "Consumption this month", UnitOfVolume.LITERS),
             ("average_daily_liters", "Daily average (7 days)", UnitOfVolume.LITERS),
-            ("estimated_month_cost_eur", "Estimated month cost", UnitOfCurrency.EUR),
+            ("estimated_month_cost_eur", "Estimated month cost", "€"),
         )
     )
     async_add_entities(sensors)
