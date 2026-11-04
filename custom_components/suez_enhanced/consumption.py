@@ -24,11 +24,20 @@ def consumption_summary(measures: list, today: date, price_per_m3: float) -> dic
 
     week_liters = total(week)
     month_liters = total(month)
+    yesterday_liters = readings.get(today - timedelta(days=1))
+    # SUEZ data is commonly delayed by two days. Do not silently substitute
+    # the last confirmed day for yesterday.
+    def cost(liters):
+        return round(liters / 1000 * price_per_m3, 2) if liters is not None and price_per_m3 > 0 else None
+
     return {
         "consumption_7d_liters": week_liters,
         "consumption_month_liters": month_liters,
         "average_daily_liters": round(week_liters / 7, 3) if week_liters is not None else None,
-        "estimated_month_cost_eur": round(month_liters / 1000 * price_per_m3, 2) if month_liters is not None and price_per_m3 > 0 else None,
+        "estimated_yesterday_cost_eur": cost(yesterday_liters),
+        "estimated_7d_cost_eur": cost(week_liters),
+        "estimated_month_cost_eur": cost(month_liters),
+        "estimated_annual_cost_eur": cost(week_liters / 7 * 365) if week_liters is not None else None,
         "consumption_period_end": cutoff.isoformat(),
         "consumption_month_start": month_start.isoformat(),
     }
