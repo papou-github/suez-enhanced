@@ -1,0 +1,47 @@
+name: Check integration version
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Validate manifest version and release tag
+        env:
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          manifest = json.loads(Path("custom_components/suez_enhanced/manifest.json").read_text(encoding="utf-8"))
+          version = manifest.get("version")
+          if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:[a-zA-Z0-9.-]+)?", version):
+              raise SystemExit(f"Invalid manifest version: {version!r}")
+          print(f"Home Assistant manifest version: {version}")
+
+          if os.environ["GITHUB_REF_TYPE"] == "tag":
+              tag = os.environ["GITHUB_REF_NAME"]
+              expected = f"v{version}"
+              if tag != expected:
+                  raise SystemExit(f"VERSION MISMATCH: GitHub tag {tag!r} != manifest {expected!r}. Update manifest.json before tagging.")
+              print(f"Release tag matches manifest: {tag}")
+          else:
+              print("Manifest version format OK; tag comparison runs on v* tag pushes.")
+          PY
