@@ -101,7 +101,10 @@ class SuezCoordinator(DataUpdateCoordinator):
                     "consumption_7d_liters": None,
                     "consumption_month_liters": None,
                     "average_daily_liters": None,
+                    "estimated_yesterday_cost_eur": None,
+                    "estimated_7d_cost_eur": None,
                     "estimated_month_cost_eur": None,
+                    "estimated_annual_cost_eur": None,
                     "consumption_period_end": None,
                     "consumption_month_start": None,
                 }
