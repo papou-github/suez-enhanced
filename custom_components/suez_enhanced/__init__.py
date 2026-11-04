@@ -21,6 +21,8 @@ class SuezCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry):
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(hours=6))
         self.entry = entry
+        self._year_cache = {}
+        self._year_cache_year = None
 
     async def _async_update_data(self):
         data = self.entry.data
@@ -108,6 +110,49 @@ class SuezCoordinator(DataUpdateCoordinator):
                     "consumption_period_end": None,
                     "consumption_month_start": None,
                 }
+            # Fetch confirmed earlier readings once per calendar year. Recent
+            # telemetry is always refreshed; historical data is cached in memory
+            # to avoid repeatedly downloading the full year every six hours.
+            year_start = today.replace(month=1, day=1)
+            cutoff = today - timedelta(days=2)
+            if self._year_cache_year != today.year:
+                self._year_cache = {}
+                self._year_cache_year = today.year
+            try:
+                from .history import daily_readings
+                recent_start = today - timedelta(days=35)
+                # Historical windows precede the normal recent request.
+                cursor = year_start
+                while cursor < recent_start and cursor <= cutoff:
+                    end = min(cursor + timedelta(days=14), recent_start)
+                    missing = [
+                        day for day in (cursor + timedelta(days=i)
+                        for i in range((end - cursor).days))
+                        if day not in self._year_cache
+                    ]
+                    if missing:
+                        historical = await client.fetch_telemetry(
+                            TelemetryMode.DAILY, cursor, end - timedelta(days=1)
+                        )
+                        for reading in daily_readings(historical):
+                            if year_start <= reading.day < recent_start:
+                                self._year_cache[reading.day] = reading
+                    cursor = end
+                year_measures = [
+                    type("Measure", (), {"date": day, "volume": reading.liters, "index": reading.meter_index_liters})()
+                    for day, reading in self._year_cache.items()
+                ]
+                year_measures.extend(recent)
+                year_summary = consumption_summary(
+                    year_measures, today,
+                    float(self.entry.options.get("price_per_m3", 0.0)),
+                )
+                summary["estimated_year_to_date_cost_eur"] = year_summary["estimated_year_to_date_cost_eur"]
+                summary["consumption_year_start"] = year_summary["consumption_year_start"]
+            except Exception as exc:
+                _LOGGER.warning("SUEZ year-to-date cost unavailable: %s: %s", type(exc).__name__, exc)
+                summary["estimated_year_to_date_cost_eur"] = None
+                summary["consumption_year_start"] = year_start.isoformat()
             return {
                 **summary,
                 "index": latest.index / 1000,

@@ -42,6 +42,16 @@ class ConsumptionTests(unittest.TestCase):
         self.assertEqual(result["consumption_month_liters"], 1700)
         self.assertEqual(result["estimated_month_cost_eur"], 8.5)
 
+    def test_year_to_date_cost_complete(self):
+        today = date(2026, 1, 12)
+        result = consumption_summary(measures(range(2, 12), today), today, 5)
+        self.assertEqual(result["estimated_year_to_date_cost_eur"], 5.0)
+
+    def test_year_to_date_missing_day(self):
+        today = date(2026, 1, 12)
+        result = consumption_summary(measures([2, 3, 4, 5, 7, 8, 9, 10, 11], today), today, 5)
+        self.assertIsNone(result["estimated_year_to_date_cost_eur"])
+
     def test_invalid_tariff(self):
         with self.assertRaises(ValueError):
             consumption_summary([], date(2026, 10, 19), -1)
