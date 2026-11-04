@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/papou-github/suez-enhanced?label=release)](https://github.com/papou-github/suez-enhanced/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/papou-github/suez-enhanced)](LICENSE)
-[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/papou-github/suez-enhanced/hacs.yml?label=HACS)](https://github.com/papou-github/suez-enhanced/actions)
+[![GitHub Actions](https://img.shields.io/badge/checks-GitHub%20Actions-blue)](https://github.com/papou-github/suez-enhanced/actions)
 
 [🇫🇷 Français](#français) · [🇬🇧 English](#english) · [Releases](https://github.com/papou-github/suez-enhanced/releases) · [Issues](https://github.com/papou-github/suez-enhanced/issues)
 
