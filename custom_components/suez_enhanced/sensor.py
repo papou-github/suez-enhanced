@@ -5,6 +5,13 @@ from homeassistant.const import UnitOfVolume
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 
+COST_KEYS = {
+    "estimated_yesterday_cost_eur",
+    "estimated_7d_cost_eur",
+    "estimated_month_cost_eur",
+    "estimated_annual_cost_eur",
+}
+
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     sensors = [SuezIndexSensor(coordinator, entry), SuezYesterdaySensor(coordinator, entry)]
@@ -24,7 +31,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("consumption_7d_liters", "Consumption last 7 days", UnitOfVolume.LITERS),
             ("consumption_month_liters", "Consumption this month", UnitOfVolume.LITERS),
             ("average_daily_liters", "Daily average (7 days)", UnitOfVolume.LITERS),
+            ("estimated_yesterday_cost_eur", "Estimated yesterday cost", "€"),
+            ("estimated_7d_cost_eur", "Estimated last 7 days cost", "€"),
             ("estimated_month_cost_eur", "Estimated month cost", "€"),
+            ("estimated_annual_cost_eur", "Estimated annual cost (7-day projection)", "€"),
         )
     )
     async_add_entities(sensors)
@@ -89,7 +99,7 @@ class SuezConsumptionSensor(SuezBaseSensor):
         self._attr_name = name
         self._attr_unique_id = f"{entry.data['counter_id']}_{key}"
         self._attr_native_unit_of_measurement = unit
-        if key != "estimated_month_cost_eur":
+        if key not in COST_KEYS:
             self._attr_device_class = SensorDeviceClass.WATER
         else:
             self._attr_icon = "mdi:currency-eur"
