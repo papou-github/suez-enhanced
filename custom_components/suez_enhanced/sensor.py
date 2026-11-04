@@ -10,6 +10,7 @@ COST_KEYS = {
     "estimated_7d_cost_eur",
     "estimated_month_cost_eur",
     "estimated_annual_cost_eur",
+    "estimated_year_to_date_cost_eur",
 }
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -35,6 +36,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("estimated_7d_cost_eur", "Estimated last 7 days cost", "€"),
             ("estimated_month_cost_eur", "Estimated month cost", "€"),
             ("estimated_annual_cost_eur", "Estimated annual cost (7-day projection)", "€"),
+            ("estimated_year_to_date_cost_eur", "Estimated year-to-date cost", "€"),
         )
     )
     async_add_entities(sensors)
@@ -113,4 +115,5 @@ class SuezConsumptionSensor(SuezBaseSensor):
         return {
             "period_end": self.coordinator.data.get("consumption_period_end"),
             "month_start": self.coordinator.data.get("consumption_month_start"),
+            "year_start": self.coordinator.data.get("consumption_year_start"),
         }
