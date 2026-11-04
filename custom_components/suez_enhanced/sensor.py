@@ -112,8 +112,12 @@ class SuezConsumptionSensor(SuezBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        return {
+        attributes = {
             "period_end": self.coordinator.data.get("consumption_period_end"),
             "month_start": self.coordinator.data.get("consumption_month_start"),
             "year_start": self.coordinator.data.get("consumption_year_start"),
         }
+        if self._key == "estimated_year_to_date_cost_eur":
+            attributes["daily_cost_history"] = self.coordinator.data.get("daily_cost_history", [])
+            attributes["cumulative_cost_history"] = self.coordinator.data.get("cumulative_cost_history", [])
+        return attributes

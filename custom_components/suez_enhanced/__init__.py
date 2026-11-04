@@ -11,6 +11,7 @@ from pysuez.suez_client import SuezClient, TelemetryMode
 from .const import DOMAIN, PLATFORMS, CONF_COUNTER_ID
 from .statistics_sync import async_continue_history, async_last_history_day
 from .consumption import consumption_summary
+from .cost_history import cost_history
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -149,10 +150,12 @@ class SuezCoordinator(DataUpdateCoordinator):
                 )
                 summary["estimated_year_to_date_cost_eur"] = year_summary["estimated_year_to_date_cost_eur"]
                 summary["consumption_year_start"] = year_summary["consumption_year_start"]
+                summary.update(cost_history(year_measures, today, float(self.entry.options.get("price_per_m3", 0.0))))
             except Exception as exc:
                 _LOGGER.warning("SUEZ year-to-date cost unavailable: %s: %s", type(exc).__name__, exc)
                 summary["estimated_year_to_date_cost_eur"] = None
                 summary["consumption_year_start"] = year_start.isoformat()
+                summary.update({"daily_cost_history": [], "cumulative_cost_history": []})
             return {
                 **summary,
                 "index": latest.index / 1000,
