@@ -16,13 +16,13 @@
 
 ## Français
 
-### Fonctionnalités (v0.4.0)
+### Fonctionnalités (v0.5.2)
 
 - **Relevés automatiques** du portail SUEZ **Tout sur mon Eau**, actualisés toutes les **6 heures**.
 - **Détection automatique du compteur** lors de la configuration.
 - **Index du compteur en m³** et **consommation de la veille en litres**.
 - **Consommation des 7 derniers jours**, **consommation du mois en cours** et **moyenne quotidienne sur 7 jours**.
-- **Estimation du coût mensuel** avec **tarif de l'eau configurable en €/m³**.
+- **Estimation des coûts de l'eau** avec **tarif configurable en €/m³** : veille, 7 derniers jours, mois en cours, cumul depuis le 1er janvier et projection annuelle.
 - **Continuité de l'historique** du tableau de bord **Énergie** pour les installations utilisant déjà les statistiques SUEZ historiques.
 - **Cinq capteurs de diagnostic facultatifs**, désactivés par défaut.
 - Interface et documentation en **français et anglais**.
@@ -47,8 +47,12 @@
 | **Consumption this month** | Consommation du mois en cours, en litres |
 | **Daily average (7 days)** | Moyenne quotidienne sur sept jours, en litres |
 | **Estimated month cost** | Coût mensuel estimé en euros, selon le tarif configuré |
+| **Estimated yesterday cost** | Coût estimé de la veille |
+| **Estimated last 7 days cost** | Coût estimé des sept derniers jours |
+| **Estimated year-to-date cost** | Coût cumulé estimé depuis le 1er janvier |
+| **Estimated annual cost** | Projection annuelle du coût de l'eau |
 
-Les cinq capteurs de diagnostic facultatifs renseignent notamment la dernière synchronisation, le dernier relevé, le dernier jour d'historique, les jours en attente et l'état de synchronisation.
+Les estimations de coût reposent sur les volumes remontés par SUEZ et le tarif configuré ; elles ne constituent pas une facture officielle. Les cinq capteurs de diagnostic facultatifs renseignent notamment la dernière synchronisation, le dernier relevé, le dernier jour d'historique, les jours en attente et l'état de synchronisation.
 
 ### Tableau de bord Énergie : préserver l'historique SUEZ
 
@@ -89,13 +93,13 @@ Les **données de consommation** sont actualisées toutes les six heures. Les **
 
 ## English
 
-### Features (v0.4.0)
+### Features (v0.5.2)
 
 - **Automatic readings** from the **SUEZ Tout sur mon Eau** portal, refreshed **every 6 hours**.
 - **Automatic water meter discovery** during setup.
 - **Cumulative meter index in m³** and **yesterday's water usage in liters**.
 - **Last 7 days consumption**, **month-to-date consumption**, and **7-day daily average**.
-- **Estimated monthly water cost** with a configurable **€/m³ water tariff**.
+- **Estimated water costs** with a configurable **€/m³ tariff**: yesterday, last 7 days, current month, year-to-date and annualized projection.
 - **Energy dashboard history continuity** for Home Assistant installations with existing legacy SUEZ statistics.
 - **Five optional diagnostic sensors**, disabled by default.
 - **French and English** interface and documentation.
@@ -120,8 +124,12 @@ Les **données de consommation** sont actualisées toutes les six heures. Les **
 | **Consumption this month** | Month-to-date consumption in liters |
 | **Daily average (7 days)** | Seven-day average daily consumption, in liters |
 | **Estimated month cost** | Estimated monthly cost in euros, using the configured tariff |
+| **Estimated yesterday cost** | Estimated cost for yesterday |
+| **Estimated last 7 days cost** | Estimated cost over the last seven days |
+| **Estimated year-to-date cost** | Estimated cumulative cost since January 1 |
+| **Estimated annual cost** | Annualized water cost projection |
 
-Five optional diagnostic sensors report the last sync, last reading day, last historical day, pending historical days and history sync status.
+Cost estimates are based on SUEZ consumption readings and the configured tariff; they are not official invoices. Five optional diagnostic sensors report the last sync, last reading day, last historical day, pending historical days and history sync status.
 
 ### Home Assistant Energy dashboard history continuity
 
