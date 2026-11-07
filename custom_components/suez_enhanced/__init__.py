@@ -1,10 +1,11 @@
 """SUEZ Enhanced integration."""
-from datetime import timedelta
+from datetime import date, timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from pysuez.suez_client import SuezClient, TelemetryMode
 
@@ -12,10 +13,12 @@ from .const import DOMAIN, PLATFORMS, CONF_COUNTER_ID
 from .statistics_sync import async_continue_history, async_last_history_day
 from .consumption import consumption_summary
 from .cost_history import cost_history
+from .history import DailyReading, daily_readings
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
 FETCH_WINDOW_DAYS = 14
+YEAR_CACHE_VERSION = 1
 
 
 class SuezCoordinator(DataUpdateCoordinator):
@@ -24,6 +27,62 @@ class SuezCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self._year_cache = {}
         self._year_cache_year = None
+        self._year_store = Store(hass, YEAR_CACHE_VERSION, f"{DOMAIN}_year_cache_{entry.entry_id}")
+
+    async def async_load_year_cache(self):
+        """Restore validated historical readings before the first API refresh."""
+        try:
+            saved = await self._year_store.async_load()
+            if not isinstance(saved, dict):
+                return
+            year = dt_util.now().year
+            if (saved.get("year") != year
+                    or saved.get("counter_id") != str(self.entry.data[CONF_COUNTER_ID])):
+                return
+            restored = {}
+            for item in saved.get("readings", []):
+                day = date.fromisoformat(item["day"])
+                if day.year != year:
+                    raise ValueError("Cached reading belongs to another year")
+                reading = DailyReading(
+                    day=day,
+                    liters=float(item["liters"]),
+                    meter_index_liters=(
+                        float(item["index"]) if item["index"] is not None else None
+                    ),
+                )
+                restored[day] = reading
+            # Reuse the existing validation rules for SUEZ telemetry.
+            validated = daily_readings([
+                type("CachedMeasure", (), {
+                    "date": reading.day,
+                    "volume": reading.liters,
+                    "index": reading.meter_index_liters,
+                })()
+                for reading in restored.values()
+            ])
+            if len(validated) != len(restored):
+                raise ValueError("Invalid cached readings")
+            self._year_cache = {reading.day: reading for reading in validated}
+            self._year_cache_year = year
+            _LOGGER.debug("Restored %d SUEZ annual readings from cache", len(validated))
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            _LOGGER.warning("SUEZ annual cache ignored: %s", exc)
+
+    async def async_save_year_cache(self):
+        """Persist validated older readings without storing account credentials."""
+        await self._year_store.async_save({
+            "year": self._year_cache_year,
+            "counter_id": str(self.entry.data[CONF_COUNTER_ID]),
+            "readings": [
+                {
+                    "day": reading.day.isoformat(),
+                    "liters": reading.liters,
+                    "index": reading.meter_index_liters,
+                }
+                for reading in sorted(self._year_cache.values(), key=lambda r: r.day)
+            ],
+        })
 
     async def _async_update_data(self):
         data = self.entry.data
@@ -120,10 +179,10 @@ class SuezCoordinator(DataUpdateCoordinator):
                 self._year_cache = {}
                 self._year_cache_year = today.year
             try:
-                from .history import daily_readings
                 recent_start = today - timedelta(days=35)
                 # Historical windows precede the normal recent request.
                 cursor = year_start
+                cache_changed = False
                 while cursor < recent_start and cursor <= cutoff:
                     end = min(cursor + timedelta(days=14), recent_start)
                     missing = [
@@ -137,8 +196,15 @@ class SuezCoordinator(DataUpdateCoordinator):
                         )
                         for reading in daily_readings(historical):
                             if year_start <= reading.day < recent_start:
-                                self._year_cache[reading.day] = reading
+                                if self._year_cache.get(reading.day) != reading:
+                                    self._year_cache[reading.day] = reading
+                                    cache_changed = True
                     cursor = end
+                if cache_changed:
+                    try:
+                        await self.async_save_year_cache()
+                    except Exception as exc:
+                        _LOGGER.warning("Unable to persist SUEZ annual cache: %s", exc)
                 year_measures = [
                     type("Measure", (), {"date": day, "volume": reading.liters, "index": reading.meter_index_liters})()
                     for day, reading in self._year_cache.items()
@@ -171,6 +237,7 @@ class SuezCoordinator(DataUpdateCoordinator):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = SuezCoordinator(hass, entry)
+    await coordinator.async_load_year_cache()
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
