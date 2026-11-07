@@ -14,6 +14,7 @@ from .statistics_sync import async_continue_history, async_last_history_day
 from .consumption import consumption_summary
 from .cost_history import cost_history
 from .history import DailyReading, daily_readings
+from .recorder_history import async_recorder_daily_readings
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -170,44 +171,23 @@ class SuezCoordinator(DataUpdateCoordinator):
                     "consumption_period_end": None,
                     "consumption_month_start": None,
                 }
-            # Fetch confirmed earlier readings once per calendar year. Recent
-            # telemetry is always refreshed; historical data is cached in memory
-            # to avoid repeatedly downloading the full year every six hours.
+            # Recorder is the canonical local source for imported daily history.
+            # Never re-download the entire year on normal refresh.
             year_start = today.replace(month=1, day=1)
-            cutoff = today - timedelta(days=2)
-            if self._year_cache_year != today.year:
-                self._year_cache = {}
-                self._year_cache_year = today.year
             try:
-                recent_start = today - timedelta(days=35)
-                # Historical windows precede the normal recent request.
-                cursor = year_start
-                cache_changed = False
-                while cursor < recent_start and cursor <= cutoff:
-                    end = min(cursor + timedelta(days=14), recent_start)
-                    missing = [
-                        day for day in (cursor + timedelta(days=i)
-                        for i in range((end - cursor).days))
-                        if day not in self._year_cache
-                    ]
-                    if missing:
-                        historical = await client.fetch_telemetry(
-                            TelemetryMode.DAILY, cursor, end - timedelta(days=1)
-                        )
-                        for reading in daily_readings(historical):
-                            if year_start <= reading.day < recent_start:
-                                if self._year_cache.get(reading.day) != reading:
-                                    self._year_cache[reading.day] = reading
-                                    cache_changed = True
-                    cursor = end
-                if cache_changed:
-                    try:
-                        await self.async_save_year_cache()
-                    except Exception as exc:
-                        _LOGGER.warning("Unable to persist SUEZ annual cache: %s", exc)
+                recorded = await async_recorder_daily_readings(
+                    self.hass, str(data[CONF_COUNTER_ID]), today.year
+                )
+                # Fresh API values take precedence over recorded values for the
+                # overlapping recent period, without rewriting old statistics.
                 year_measures = [
-                    type("Measure", (), {"date": day, "volume": reading.liters, "index": reading.meter_index_liters})()
-                    for day, reading in self._year_cache.items()
+                    type("Measure", (), {
+                        "date": reading.day,
+                        "volume": reading.liters,
+                        "index": reading.meter_index_liters,
+                    })()
+                    for reading in recorded
+                    if reading.day < today - timedelta(days=35)
                 ]
                 year_measures.extend(recent)
                 year_summary = consumption_summary(
@@ -216,9 +196,19 @@ class SuezCoordinator(DataUpdateCoordinator):
                 )
                 summary["estimated_year_to_date_cost_eur"] = year_summary["estimated_year_to_date_cost_eur"]
                 summary["consumption_year_start"] = year_summary["consumption_year_start"]
-                summary.update(cost_history(year_measures, today, float(self.entry.options.get("price_per_m3", 0.0))))
+                summary.update(cost_history(
+                    year_measures, today,
+                    float(self.entry.options.get("price_per_m3", 0.0)),
+                ))
+                _LOGGER.debug(
+                    "SUEZ year history: %d days read from Recorder",
+                    len(recorded),
+                )
             except Exception as exc:
-                _LOGGER.warning("SUEZ year-to-date cost unavailable: %s: %s", type(exc).__name__, exc)
+                _LOGGER.warning(
+                    "SUEZ Recorder year history unavailable: %s: %s",
+                    type(exc).__name__, exc,
+                )
                 summary["estimated_year_to_date_cost_eur"] = None
                 summary["consumption_year_start"] = year_start.isoformat()
                 summary.update({"daily_cost_history": [], "cumulative_cost_history": []})
@@ -237,7 +227,6 @@ class SuezCoordinator(DataUpdateCoordinator):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = SuezCoordinator(hass, entry)
-    await coordinator.async_load_year_cache()
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
