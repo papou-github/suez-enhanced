@@ -6,7 +6,7 @@ from math import isfinite
 from zoneinfo import ZoneInfo
 
 from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.statistics import get_statistics
+from homeassistant.components.recorder.statistics import statistics_during_period
 
 from .history import DailyReading
 from .statistics_sync import legacy_statistic_id
@@ -16,11 +16,11 @@ PARIS = ZoneInfo("Europe/Paris")
 
 async def async_recorder_daily_readings(hass, counter_id: str, year: int) -> list[DailyReading]:
     """Read the already-imported daily states without changing Recorder."""
-    start = datetime(year, 1, 1, tzinfo=PARIS).astimezone(timezone.utc)
+    start = datetime(year, 1, 1, tzinfo=PARIS).astimezone(timezone.utc) - timedelta(days=2)
     end = datetime(year + 1, 1, 1, tzinfo=PARIS).astimezone(timezone.utc)
     statistic_id = legacy_statistic_id(counter_id)
     result = await get_instance(hass).async_add_executor_job(
-        get_statistics, hass, start, end, [statistic_id], "day", None, {"state"}
+        statistics_during_period, hass, start, end, {statistic_id}, "hour", None, {"state"}
     )
     readings = {}
     for record in result.get(statistic_id, []):
