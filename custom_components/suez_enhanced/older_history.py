@@ -49,6 +49,7 @@ async def async_discover_older_history(hass, entry) -> None:
             return
         start = max(floor, end - timedelta(days=WINDOW - 1))
         client = SuezClient(entry.data["username"], entry.data["password"], entry.data[CONF_COUNTER_ID])
+        failed = False
         try:
             await client._connect()
             measures = await client.fetch_telemetry(TelemetryMode.DAILY, start - timedelta(days=1), end)
@@ -64,10 +65,12 @@ async def async_discover_older_history(hass, entry) -> None:
             raise
         except Exception:
             _LOGGER.exception("SUEZ older-history discovery retry scheduled at %s", start)
-            await asyncio.sleep(RETRY_SECONDS)
-            continue
+            failed = True
         finally:
             await client.close_session()
+        if failed:
+            await asyncio.sleep(RETRY_SECONDS)
+            continue
         end = start - timedelta(days=1)
         await asyncio.sleep(PAUSE)
     if empty >= EMPTY_LIMIT:
