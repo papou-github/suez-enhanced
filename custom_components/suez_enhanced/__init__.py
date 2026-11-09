@@ -23,6 +23,8 @@ class SuezCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry):
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(hours=6))
         self.entry = entry
+        self._recent_cache_day = None
+        self._recent_cache = None
     async def _async_update_data(self):
         data = self.entry.data
         client = SuezClient(data["username"], data["password"], data[CONF_COUNTER_ID])
@@ -36,9 +38,24 @@ class SuezCoordinator(DataUpdateCoordinator):
         }
         try:
             await client._connect()
-            recent = await client.fetch_telemetry(
-                TelemetryMode.DAILY, today - timedelta(days=35), today
-            )
+            # Avoid repeat downloads once the latest eligible day is available.
+            # Missing days are retried every polling interval.
+            target_day = today - timedelta(days=2)
+            if (
+                self._recent_cache_day == today
+                and self._recent_cache is not None
+                and any(
+                    m.date == target_day and m.volume is not None
+                    for m in self._recent_cache
+                )
+            ):
+                recent = self._recent_cache
+            else:
+                recent = await client.fetch_telemetry(
+                    TelemetryMode.DAILY, today - timedelta(days=35), today
+                )
+                self._recent_cache_day = today
+                self._recent_cache = recent
             valid = [m for m in recent if m.index is not None]
             if not valid:
                 raise UpdateFailed("No valid SUEZ meter index returned")
