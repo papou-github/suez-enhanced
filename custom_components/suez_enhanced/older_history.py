@@ -51,6 +51,8 @@ async def async_discover_older_history(hass, entry) -> None:
         try:
             await client._connect()
             measures = await client.fetch_telemetry(TelemetryMode.DAILY, start, end)
+            if measures is None or not isinstance(measures, (list, tuple)):
+                raise ValueError("Invalid SUEZ historical API response")
             # Only commit after a successful API response. An empty response
             # advances the checkpoint but never means 'all history exhausted'.
             valid = [m for m in measures if getattr(m, "volume", None) is not None and start <= m.date <= end]
