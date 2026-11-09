@@ -55,6 +55,11 @@ class DailyTelemetryCache:
                 day = day.date()
             if not isinstance(day, date):
                 raise ValueError("Invalid SUEZ date in cache")
+            for value in (measure.volume, measure.index):
+                if value is not None and (
+                    not isinstance(value, (int, float)) or not isfinite(value) or value < 0
+                ):
+                    raise ValueError("Invalid SUEZ telemetry value in cache")
             rows.append({"date": day.isoformat(), "volume": measure.volume, "index": measure.index})
         if len(rows) > 40:
             raise ValueError("Unexpectedly large SUEZ daily cache")
