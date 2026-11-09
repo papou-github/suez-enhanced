@@ -14,6 +14,7 @@ from .consumption import consumption_summary
 from .cost_history import cost_history
 from .recorder_history import async_recorder_daily_readings
 from .history import daily_readings
+from .daily_cache import DailyTelemetryCache
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -26,6 +27,7 @@ class SuezCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self._recent_cache_day = None
         self._recent_cache = None
+        self._persistent_cache = DailyTelemetryCache(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
     async def _async_update_data(self):
         data = self.entry.data
         client = SuezClient(data["username"], data["password"], data[CONF_COUNTER_ID])
@@ -42,6 +44,9 @@ class SuezCoordinator(DataUpdateCoordinator):
             # Avoid repeat downloads once the latest eligible day is available.
             # Missing days are retried every polling interval.
             target_day = today - timedelta(days=2)
+            if self._recent_cache_day != today:
+                self._recent_cache = await self._persistent_cache.async_load(today)
+                self._recent_cache_day = today
             if (
                 self._recent_cache_day == today
                 and self._recent_cache is not None
@@ -63,6 +68,11 @@ class SuezCoordinator(DataUpdateCoordinator):
             if not valid:
                 raise UpdateFailed("No valid SUEZ meter index returned")
             latest = max(valid, key=lambda m: m.date)
+            if connected:
+                try:
+                    await self._persistent_cache.async_save(today, recent)
+                except Exception as exc:
+                    _LOGGER.warning("SUEZ daily cache save failed: %s: %s", type(exc).__name__, exc)
             yesterday = next(
                 (m for m in recent if m.date == today - timedelta(days=1)), None
             )
