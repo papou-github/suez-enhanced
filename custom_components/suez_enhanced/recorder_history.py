@@ -40,37 +40,57 @@ async def async_recorder_daily_readings(hass, counter_id: str, year: int) -> lis
     return sorted(readings.values(), key=lambda reading: reading.day)
 
 
-async def async_recorder_multi_year_summary(hass, counter_id: str, first_year: int, last_year: int, price_per_m3: float) -> dict:
-    """Summarize recorded days by calendar year, without modifying statistics.
-
-    Only confirmed Recorder days are counted. Incomplete years are explicitly
-    marked and never represented as a complete year's consumption.
-    """
-    from datetime import date
+def summarize_calendar_year(readings_by_day: dict, year: int, price_per_m3: float) -> dict | None:
+    """Summarize observed days, explicitly marking incomplete years."""
     from calendar import isleap
-    from math import isfinite
+    from datetime import date
 
-    if first_year > last_year or last_year - first_year > 20:
+    days = {day: liters for day, liters in readings_by_day.items() if day.year == year}
+    if not days:
+        return None
+    total = sum(days.values())
+    expected = 366 if isleap(year) else 365
+    return {
+        "liters": round(total, 3),
+        "m3": round(total / 1000, 3),
+        "estimated_cost_eur": round(total / 1000 * price_per_m3, 2)
+            if price_per_m3 > 0 else None,
+        "recorded_days": len(days),
+        "expected_days": expected,
+        "complete": len(days) == expected,
+        "first_day": min(days).isoformat(),
+        "last_day": max(days).isoformat(),
+    }
+
+
+async def async_recorder_multi_year_summary(
+    hass, counter_id: str, first_year: int, last_year: int,
+    price_per_m3: float, archive_days: dict | None = None,
+) -> dict:
+    """Combine isolated older archive and Recorder, prioritizing Recorder."""
+    from datetime import date
+
+    if first_year > last_year or last_year - first_year >= 20:
         raise ValueError("Invalid multi-year summary range")
     if not isfinite(price_per_m3) or price_per_m3 < 0:
         raise ValueError("Invalid price")
+    archive_days = archive_days or {}
+    archive = {}
+    for day_text, liters in archive_days.items():
+        day = date.fromisoformat(day_text)
+        if not isinstance(liters, (int, float)) or not isfinite(liters) or liters < 0:
+            raise ValueError("Invalid archived daily consumption")
+        if first_year <= day.year <= last_year:
+            archive[day] = float(liters)
     result = {}
     for year in range(first_year, last_year + 1):
-        readings = await async_recorder_daily_readings(hass, counter_id, year)
-        if not readings:
-            continue
-        liters = sum(r.liters for r in readings)
-        expected_days = 366 if isleap(year) else 365
-        days = {r.day for r in readings}
-        result[str(year)] = {
-            "liters": round(liters, 3),
-            "m3": round(liters / 1000, 3),
-            "estimated_cost_eur": round(liters / 1000 * price_per_m3, 2)
-                if price_per_m3 > 0 else None,
-            "recorded_days": len(days),
-            "expected_days": expected_days,
-            "complete": len(days) == expected_days,
-            "first_day": min(days).isoformat(),
-            "last_day": max(days).isoformat(),
-        }
+        days = {day: value for day, value in archive.items() if day.year == year}
+        recorded = await async_recorder_daily_readings(hass, counter_id, year)
+        # Recorder wins on overlap; archive never changes Recorder values.
+        days.update({reading.day: reading.liters for reading in recorded})
+        summary = summarize_calendar_year(days, year, price_per_m3)
+        if summary is not None:
+            summary["recorder_days"] = len(recorded)
+            summary["archive_only_days"] = len(days) - len(recorded)
+            result[str(year)] = summary
     return result
