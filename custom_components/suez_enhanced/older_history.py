@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, timedelta
+from homeassistant.util import dt as dt_util
 import logging
 
 from pysuez.suez_client import SuezClient, TelemetryMode
@@ -28,7 +29,7 @@ async def async_discover_older_history(hass, entry) -> None:
     await asyncio.sleep(60)
     counter = str(entry.data[CONF_COUNTER_ID])
     archive = HistoricalArchive(hass, entry.entry_id, counter)
-    today = date.today()
+    today = dt_util.now().date()
     first = None
     for year in range(today.year - MAX_YEARS, today.year + 1):
         readings = await async_recorder_daily_readings(hass, counter, year)
