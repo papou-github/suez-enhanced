@@ -22,13 +22,11 @@ RETRY_SECONDS = 3600
 
 
 async def async_forward_backfill(hass, entry, lock: asyncio.Lock) -> None:
-    """Import one consecutive window per iteration without blocking setup."""
+    """Retry missing days hourly; hold lock only during Recorder/API operations."""
     counter_id = str(entry.data[CONF_COUNTER_ID])
-    # Give Home Assistant time to finish initial entity setup.
     await asyncio.sleep(30)
-    while True:
-        if entry.options.get("history_sync_enabled", True) is not True:
-            return
+    while entry.options.get("history_sync_enabled", True) is True:
+        delay = PAUSE_SECONDS
         async with lock:
             last_day = await async_last_history_day(hass, counter_id)
             if last_day is None:
@@ -39,7 +37,6 @@ async def async_forward_backfill(hass, entry, lock: asyncio.Lock) -> None:
                 return
             start = last_day + timedelta(days=1)
             end = min(start + timedelta(days=WINDOW_DAYS - 1), latest)
-            # Include previous day for optional index-delta validation.
             client = SuezClient(
                 entry.data["username"], entry.data["password"], entry.data[CONF_COUNTER_ID]
             )
@@ -51,21 +48,20 @@ async def async_forward_backfill(hass, entry, lock: asyncio.Lock) -> None:
                 preview = await async_continue_history(
                     hass, counter_id, measures, write=True
                 )
+                if preview["new_days"] == 0:
+                    delay = RETRY_SECONDS
+                    _LOGGER.info("SUEZ backfill will retry missing day %s", start)
+                else:
+                    _LOGGER.info(
+                        "SUEZ background backfill requested %s through %s (%d days)",
+                        preview["first_new_day"], preview["last_new_day"], preview["new_days"],
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception:
-                _LOGGER.exception("SUEZ backfill paused at %s", start)
-                await asyncio.sleep(RETRY_SECONDS)
-                continue
+                delay = RETRY_SECONDS
+                _LOGGER.exception("SUEZ backfill will retry at %s", start)
             finally:
                 await client.close_session()
-            if preview["new_days"] == 0:
-                _LOGGER.info("SUEZ backfill waiting for missing day %s", start)
-                await asyncio.sleep(RETRY_SECONDS)
-                continue
-            _LOGGER.info(
-                "SUEZ background backfill requested %s through %s (%d days)",
-                preview["first_new_day"], preview["last_new_day"], preview["new_days"],
-            )
-        # Allow Recorder to commit the queued statistics before re-reading.
-        await asyncio.sleep(PAUSE_SECONDS)
+        # Never hold history_lock while sleeping.
+        await asyncio.sleep(delay)
