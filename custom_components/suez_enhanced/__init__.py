@@ -1,5 +1,6 @@
 """SUEZ Enhanced integration."""
 from datetime import timedelta
+import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,7 +13,13 @@ from .const import DOMAIN, PLATFORMS, CONF_COUNTER_ID
 from .statistics_sync import async_continue_history, async_last_history_day
 from .consumption import consumption_summary
 from .cost_history import cost_history
-from .recorder_history import async_recorder_daily_readings
+from .recorder_history import async_recorder_daily_readings, async_recorder_multi_year_summary
+from .history import daily_readings
+from .daily_cache import DailyTelemetryCache
+from .backfill import async_forward_backfill
+from .older_history import async_discover_older_history
+from .historical_archive import HistoricalArchive
+from .full_history_statistics import async_sync_full_history
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -23,6 +30,18 @@ class SuezCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry):
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(hours=6))
         self.entry = entry
+        self.history_lock = asyncio.Lock()
+        self.backfill_task = None
+        self.older_history_task = None
+        self.full_history_task = None
+        self._multi_year_cache_day = None
+        self._multi_year_cache = {}
+        self._multi_year_archive_cursor = None
+        self._multi_year_price = None
+        self._archive = HistoricalArchive(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
+        self._recent_cache_day = None
+        self._recent_cache = None
+        self._persistent_cache = DailyTelemetryCache(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
     async def _async_update_data(self):
         data = self.entry.data
         client = SuezClient(data["username"], data["password"], data[CONF_COUNTER_ID])
@@ -34,15 +53,45 @@ class SuezCoordinator(DataUpdateCoordinator):
             "history_pending_days": None,
             "history_status": "not_checked",
         }
+        connected = False
         try:
-            await client._connect()
-            recent = await client.fetch_telemetry(
-                TelemetryMode.DAILY, today - timedelta(days=35), today
-            )
+            # Avoid repeat downloads once yesterday is available.
+            # Missing yesterday is retried every polling interval.
+            # Prefer yesterday when published; otherwise retry until it appears.
+            target_day = today - timedelta(days=1)
+            if self._recent_cache_day != today:
+                try:
+                    self._recent_cache = await self._persistent_cache.async_load(today)
+                except Exception as exc:
+                    self._recent_cache = None
+                    _LOGGER.warning("SUEZ daily cache load failed: %s: %s", type(exc).__name__, exc)
+                self._recent_cache_day = today
+            if (
+                self._recent_cache_day == today
+                and self._recent_cache is not None
+                and any(
+                    m.date == target_day and m.volume is not None
+                    for m in self._recent_cache
+                )
+            ):
+                recent = self._recent_cache
+            else:
+                await client._connect()
+                connected = True
+                recent = await client.fetch_telemetry(
+                    TelemetryMode.DAILY, today - timedelta(days=35), today
+                )
+                self._recent_cache_day = today
+                self._recent_cache = recent
             valid = [m for m in recent if m.index is not None]
             if not valid:
                 raise UpdateFailed("No valid SUEZ meter index returned")
             latest = max(valid, key=lambda m: m.date)
+            if connected:
+                try:
+                    await self._persistent_cache.async_save(today, recent)
+                except Exception as exc:
+                    _LOGGER.warning("SUEZ daily cache save failed: %s: %s", type(exc).__name__, exc)
             yesterday = next(
                 (m for m in recent if m.date == today - timedelta(days=1)), None
             )
@@ -60,26 +109,23 @@ class SuezCoordinator(DataUpdateCoordinator):
                     diagnostics["history_pending_days"] = max(
                         0, (today - timedelta(days=2) - last_day).days
                     )
-                    measures = list(recent)
+                    # Long gaps are recovered by the bounded background worker.
+                    # Never block coordinator startup with many API windows.
                     earliest = today - timedelta(days=35)
-                    if last_day < earliest:
-                        # Fetch older windows chronologically, bounded to a year.
-                        cursor = max(
-                            last_day - timedelta(days=1),
-                            today - timedelta(days=MAX_BACKFILL_DAYS),
-                        )
-                        while cursor < earliest:
-                            end = min(cursor + timedelta(days=FETCH_WINDOW_DAYS), earliest)
-                            measures.extend(await client.fetch_telemetry(
-                                TelemetryMode.DAILY, cursor, end
-                            ))
-                            cursor = end
                     write = self.entry.options.get("history_sync_enabled", True) is True
-                    preview = await async_continue_history(
-                        self.hass, str(data[CONF_COUNTER_ID]), measures, write=write
-                    )
+                    if last_day < earliest - timedelta(days=1):
+                        diagnostics["history_status"] = (
+                            "backfill_pending" if write else "disabled"
+                        )
+                        preview = {"new_days": 0}
+                    else:
+                        async with self.history_lock:
+                            preview = await async_continue_history(
+                                self.hass, str(data[CONF_COUNTER_ID]), recent, write=write
+                            )
                     diagnostics["history_status"] = (
-                        "import_requested" if write and preview["new_days"]
+                        "backfill_pending" if last_day < earliest - timedelta(days=1) and write
+                        else "import_requested" if write and preview["new_days"]
                         else "disabled" if not write else "up_to_date"
                     )
                     diagnostics["history_pending_days"] = max(
@@ -118,16 +164,27 @@ class SuezCoordinator(DataUpdateCoordinator):
                 )
                 # Fresh API values take precedence over recorded values for the
                 # overlapping recent period, without rewriting old statistics.
-                year_measures = [
-                    type("Measure", (), {
+                # Merge by day: prefer API readings where available, but
+                # retain Recorder readings for any gaps in the API response.
+                # This avoids a false gap in annual charts after a transient
+                # SUEZ omission. Never rewrite existing Recorder statistics.
+                year_by_day = {
+                    reading.day: type("Measure", (), {
                         "date": reading.day,
                         "volume": reading.liters,
                         "index": reading.meter_index_liters,
                     })()
                     for reading in recorded
-                    if reading.day < today - timedelta(days=35)
-                ]
-                year_measures.extend(recent)
+                }
+                year_by_day.update({
+                    reading.day: type("Measure", (), {
+                        "date": reading.day,
+                        "volume": reading.liters,
+                        "index": reading.meter_index_liters,
+                    })()
+                    for reading in daily_readings(recent)
+                })
+                year_measures = list(year_by_day.values())
                 year_summary = consumption_summary(
                     year_measures, today,
                     float(self.entry.options.get("price_per_m3", 0.0)),
@@ -150,6 +207,39 @@ class SuezCoordinator(DataUpdateCoordinator):
                 summary["estimated_year_to_date_cost_eur"] = None
                 summary["consumption_year_start"] = year_start.isoformat()
                 summary.update({"daily_cost_history": [], "cumulative_cost_history": []})
+            # Read-only multi-year summaries, refreshed at most once per day.
+            # Do not expose thousands of daily points as sensor attributes.
+            try:
+                archive_data = await self._archive.load()
+                archive_cursor = archive_data["cursor"]
+            except Exception as exc:
+                archive_data = {"days": {}, "cursor": None}
+                archive_cursor = None
+                _LOGGER.warning("SUEZ historical archive unavailable: %s: %s", type(exc).__name__, exc)
+            annual_price = float(self.entry.options.get("price_per_m3", 0.0))
+            if (self._multi_year_cache_day != today
+                    or self._multi_year_archive_cursor != archive_cursor
+                    or self._multi_year_price != annual_price):
+                try:
+                    self._multi_year_cache = await async_recorder_multi_year_summary(
+                        self.hass, str(data[CONF_COUNTER_ID]),
+                        max(2000, today.year - 5), today.year,
+                        annual_price,
+                        archive_days=archive_data["days"],
+                    )
+                    self._multi_year_cache_day = today
+                    self._multi_year_archive_cursor = archive_cursor
+                    self._multi_year_price = annual_price
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "SUEZ multi-year Recorder summary unavailable: %s: %s",
+                        type(exc).__name__, exc,
+                    )
+            summary["multi_year_summary"] = self._multi_year_cache
+            diagnostics["archive_oldest_day"] = min(archive_data["days"], default=None)
+            diagnostics["archive_reading_days"] = len(archive_data["days"])
+            diagnostics["archive_scan_cursor"] = archive_cursor
+            diagnostics["archive_empty_windows"] = archive_data.get("empty_windows", 0)
             return {
                 **summary,
                 "index": latest.index / 1000,
@@ -160,7 +250,33 @@ class SuezCoordinator(DataUpdateCoordinator):
         except Exception as exc:
             raise UpdateFailed(f"SUEZ API request failed: {type(exc).__name__}") from exc
         finally:
-            await client.close_session()
+            if connected:
+                await client.close_session()
+
+
+async def _async_full_history_after_discovery(hass, entry, lock):
+    """Only start new Recorder series after bounded discovery completes."""
+    from datetime import date
+    try:
+        await async_discover_older_history(hass, entry)
+        archive = await HistoricalArchive(
+            hass, entry.entry_id, entry.data[CONF_COUNTER_ID]
+        ).load()
+        today = dt_util.now().date()
+        floor = today - timedelta(days=365 * 5)
+        cursor = archive.get("cursor")
+        exhausted = archive.get("empty_windows", 0) >= 4
+        reached_floor = cursor is not None and date.fromisoformat(cursor) <= floor
+        if not (exhausted or reached_floor):
+            _LOGGER.warning(
+                "SUEZ full-history Recorder import postponed: older API scan incomplete"
+            )
+            return
+        await async_sync_full_history(hass, entry, lock)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        _LOGGER.exception("SUEZ full-history background worker failed")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -168,11 +284,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    coordinator.backfill_task = hass.async_create_background_task(
+        async_forward_backfill(hass, entry, coordinator.history_lock),
+        f"suez_enhanced_backfill_{entry.entry_id}",
+    )
+    if entry.options.get("older_history_import_enabled", False) is True:
+        coordinator.older_history_task = hass.async_create_background_task(
+            _async_full_history_after_discovery(hass, entry, coordinator.history_lock),
+            f"suez_enhanced_older_history_{entry.entry_id}",
+        )
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        if coordinator.backfill_task is not None:
+            coordinator.backfill_task.cancel()
+        if coordinator.older_history_task is not None:
+            coordinator.older_history_task.cancel()
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return ok

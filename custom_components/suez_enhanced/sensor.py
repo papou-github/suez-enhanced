@@ -24,6 +24,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("history_last_day", "Last historical day"),
             ("history_pending_days", "Historical days pending"),
             ("history_status", "History sync status"),
+            ("archive_oldest_day", "Oldest archived day"),
+            ("archive_reading_days", "Archived reading days"),
+            ("archive_scan_cursor", "Archive scan cursor"),
+            ("archive_empty_windows", "Archive empty windows"),
         )
     )
     sensors.extend(
@@ -39,6 +43,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("estimated_year_to_date_cost_eur", "Estimated year-to-date cost", "€"),
         )
     )
+    sensors.append(SuezMultiYearSensor(coordinator, entry))
     async_add_entities(sensors)
 
 class SuezBaseSensor(CoordinatorEntity, SensorEntity):
@@ -121,3 +126,22 @@ class SuezConsumptionSensor(SuezBaseSensor):
             attributes["daily_cost_history"] = self.coordinator.data.get("daily_cost_history", [])
             attributes["cumulative_cost_history"] = self.coordinator.data.get("cumulative_cost_history", [])
         return attributes
+
+
+class SuezMultiYearSensor(SuezBaseSensor):
+    """Small yearly summary for dashboard comparisons, no daily-point explosion."""
+    _attr_name = "Recorded annual consumption"
+    _attr_icon = "mdi:chart-bar"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.data['counter_id']}_multi_year_summary"
+
+    @property
+    def native_value(self):
+        return len(self.coordinator.data.get("multi_year_summary", {}))
+
+    @property
+    def extra_state_attributes(self):
+        return {"years": self.coordinator.data.get("multi_year_summary", {})}

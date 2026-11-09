@@ -1,0 +1,28 @@
+name: SUEZ Enhanced unit tests
+
+on:
+  push:
+    branches:
+      - main
+      - feature/full-history-0.7.0
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile Python sources
+        run: python -m compileall -q custom_components/suez_enhanced tests
+      - name: Run standalone regression suite
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
