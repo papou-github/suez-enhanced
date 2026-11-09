@@ -18,6 +18,7 @@ from .history import daily_readings
 from .daily_cache import DailyTelemetryCache
 from .backfill import async_forward_backfill
 from .older_history import async_discover_older_history
+from .historical_archive import HistoricalArchive
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -33,6 +34,8 @@ class SuezCoordinator(DataUpdateCoordinator):
         self.older_history_task = None
         self._multi_year_cache_day = None
         self._multi_year_cache = {}
+        self._multi_year_archive_cursor = None
+        self._archive = HistoricalArchive(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
         self._recent_cache_day = None
         self._recent_cache = None
         self._persistent_cache = DailyTelemetryCache(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
@@ -202,14 +205,23 @@ class SuezCoordinator(DataUpdateCoordinator):
                 summary.update({"daily_cost_history": [], "cumulative_cost_history": []})
             # Read-only multi-year summaries, refreshed at most once per day.
             # Do not expose thousands of daily points as sensor attributes.
-            if self._multi_year_cache_day != today:
+            try:
+                archive_data = await self._archive.load()
+                archive_cursor = archive_data["cursor"]
+            except Exception as exc:
+                archive_data = {"days": {}, "cursor": None}
+                archive_cursor = None
+                _LOGGER.warning("SUEZ historical archive unavailable: %s: %s", type(exc).__name__, exc)
+            if self._multi_year_cache_day != today or self._multi_year_archive_cursor != archive_cursor:
                 try:
                     self._multi_year_cache = await async_recorder_multi_year_summary(
                         self.hass, str(data[CONF_COUNTER_ID]),
                         max(2000, today.year - 19), today.year,
                         float(self.entry.options.get("price_per_m3", 0.0)),
+                        archive_days=archive_data["days"],
                     )
                     self._multi_year_cache_day = today
+                    self._multi_year_archive_cursor = archive_cursor
                 except Exception as exc:
                     _LOGGER.warning(
                         "SUEZ multi-year Recorder summary unavailable: %s: %s",
