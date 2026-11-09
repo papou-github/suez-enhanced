@@ -13,7 +13,7 @@ from .const import DOMAIN, PLATFORMS, CONF_COUNTER_ID
 from .statistics_sync import async_continue_history, async_last_history_day
 from .consumption import consumption_summary
 from .cost_history import cost_history
-from .recorder_history import async_recorder_daily_readings
+from .recorder_history import async_recorder_daily_readings, async_recorder_multi_year_summary
 from .history import daily_readings
 from .daily_cache import DailyTelemetryCache
 from .backfill import async_forward_backfill
@@ -29,6 +29,8 @@ class SuezCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self.history_lock = asyncio.Lock()
         self.backfill_task = None
+        self._multi_year_cache_day = None
+        self._multi_year_cache = {}
         self._recent_cache_day = None
         self._recent_cache = None
         self._persistent_cache = DailyTelemetryCache(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
@@ -196,6 +198,22 @@ class SuezCoordinator(DataUpdateCoordinator):
                 summary["estimated_year_to_date_cost_eur"] = None
                 summary["consumption_year_start"] = year_start.isoformat()
                 summary.update({"daily_cost_history": [], "cumulative_cost_history": []})
+            # Read-only multi-year summaries, refreshed at most once per day.
+            # Do not expose thousands of daily points as sensor attributes.
+            if self._multi_year_cache_day != today:
+                try:
+                    self._multi_year_cache = await async_recorder_multi_year_summary(
+                        self.hass, str(data[CONF_COUNTER_ID]),
+                        max(2000, today.year - 19), today.year,
+                        float(self.entry.options.get("price_per_m3", 0.0)),
+                    )
+                    self._multi_year_cache_day = today
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "SUEZ multi-year Recorder summary unavailable: %s: %s",
+                        type(exc).__name__, exc,
+                    )
+            summary["multi_year_summary"] = self._multi_year_cache
             return {
                 **summary,
                 "index": latest.index / 1000,
