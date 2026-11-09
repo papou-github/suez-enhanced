@@ -17,7 +17,8 @@ PARIS = ZoneInfo("Europe/Paris")
 async def async_recorder_daily_readings(hass, counter_id: str, year: int) -> list[DailyReading]:
     """Read the already-imported daily states without changing Recorder."""
     start = datetime(year, 1, 1, tzinfo=PARIS).astimezone(timezone.utc) - timedelta(days=2)
-    end = datetime(year + 1, 1, 1, tzinfo=PARIS).astimezone(timezone.utc)
+    # Dec 31 consumption is stored at midnight Jan 1 of the next year.
+    end = datetime(year + 1, 1, 2, tzinfo=PARIS).astimezone(timezone.utc)
     statistic_id = legacy_statistic_id(counter_id)
     result = await get_instance(hass).async_add_executor_job(
         statistics_during_period, hass, start, end, {statistic_id}, "hour", None, {"state"}
