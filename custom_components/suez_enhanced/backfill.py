@@ -18,6 +18,7 @@ from .statistics_sync import async_continue_history, async_last_history_day
 _LOGGER = logging.getLogger(__name__)
 WINDOW_DAYS = 14
 PAUSE_SECONDS = 300
+RETRY_SECONDS = 3600
 
 
 async def async_forward_backfill(hass, entry, lock: asyncio.Lock) -> None:
@@ -54,12 +55,14 @@ async def async_forward_backfill(hass, entry, lock: asyncio.Lock) -> None:
                 raise
             except Exception:
                 _LOGGER.exception("SUEZ backfill paused at %s", start)
-                return
+                await asyncio.sleep(RETRY_SECONDS)
+                continue
             finally:
                 await client.close_session()
             if preview["new_days"] == 0:
                 _LOGGER.info("SUEZ backfill waiting for missing day %s", start)
-                return
+                await asyncio.sleep(RETRY_SECONDS)
+                continue
             _LOGGER.info(
                 "SUEZ background backfill requested %s through %s (%d days)",
                 preview["first_new_day"], preview["last_new_day"], preview["new_days"],
