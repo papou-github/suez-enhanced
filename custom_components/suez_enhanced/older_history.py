@@ -50,7 +50,7 @@ async def async_discover_older_history(hass, entry) -> None:
         client = SuezClient(entry.data["username"], entry.data["password"], entry.data[CONF_COUNTER_ID])
         try:
             await client._connect()
-            measures = await client.fetch_telemetry(TelemetryMode.DAILY, start, end)
+            measures = await client.fetch_telemetry(TelemetryMode.DAILY, start - timedelta(days=1), end)
             if measures is None or not isinstance(measures, (list, tuple)):
                 raise ValueError("Invalid SUEZ historical API response")
             # Only commit after a successful API response. An empty response
