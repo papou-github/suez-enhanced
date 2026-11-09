@@ -84,3 +84,42 @@ async def async_append_full_history(hass, counter_id: str, readings: dict[date, 
     )
     async_add_external_statistics(hass, metadata, batch)
     return len(batch)
+
+async def async_sync_full_history(hass, entry, history_lock, *, pause_seconds: int = 300) -> None:
+    """Copy discovered archive + existing legacy readings to a new series.
+
+    Wait for the older-history scanner to finish before creating the first
+    statistic. Once created, the starting day cannot safely move backwards.
+    """
+    import asyncio
+    import logging
+
+    from .const import CONF_COUNTER_ID
+    from .historical_archive import HistoricalArchive
+    from .recorder_history import async_recorder_daily_readings
+    from homeassistant.util import dt as dt_util
+
+    logger = logging.getLogger(__name__)
+    counter = str(entry.data[CONF_COUNTER_ID])
+    archive = HistoricalArchive(hass, entry.entry_id, counter)
+    while True:
+        if entry.options.get("older_history_import_enabled", False) is not True:
+            return
+        async with history_lock:
+            payload = await archive.load()
+            today = dt_util.now().date()
+            days = {
+                date.fromisoformat(key): float(value)
+                for key, value in payload["days"].items()
+            }
+            for year in range(today.year - 5, today.year + 1):
+                for reading in await async_recorder_daily_readings(hass, counter, year):
+                    days[reading.day] = reading.liters
+            try:
+                count = await async_append_full_history(hass, counter, days)
+            except Exception:
+                logger.exception("SUEZ full-history Recorder sync paused")
+                count = 0
+        if count:
+            logger.info("SUEZ full-history Recorder queued %d daily statistics", count)
+        await asyncio.sleep(pause_seconds if count else 3600)
