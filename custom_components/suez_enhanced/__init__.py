@@ -35,6 +35,7 @@ class SuezCoordinator(DataUpdateCoordinator):
         self._multi_year_cache_day = None
         self._multi_year_cache = {}
         self._multi_year_archive_cursor = None
+        self._multi_year_price = None
         self._archive = HistoricalArchive(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
         self._recent_cache_day = None
         self._recent_cache = None
@@ -212,16 +213,20 @@ class SuezCoordinator(DataUpdateCoordinator):
                 archive_data = {"days": {}, "cursor": None}
                 archive_cursor = None
                 _LOGGER.warning("SUEZ historical archive unavailable: %s: %s", type(exc).__name__, exc)
-            if self._multi_year_cache_day != today or self._multi_year_archive_cursor != archive_cursor:
+            annual_price = float(self.entry.options.get("price_per_m3", 0.0))
+            if (self._multi_year_cache_day != today
+                    or self._multi_year_archive_cursor != archive_cursor
+                    or self._multi_year_price != annual_price):
                 try:
                     self._multi_year_cache = await async_recorder_multi_year_summary(
                         self.hass, str(data[CONF_COUNTER_ID]),
-                        max(2000, today.year - 19), today.year,
-                        float(self.entry.options.get("price_per_m3", 0.0)),
+                        max(2000, today.year - 5), today.year,
+                        annual_price,
                         archive_days=archive_data["days"],
                     )
                     self._multi_year_cache_day = today
                     self._multi_year_archive_cursor = archive_cursor
+                    self._multi_year_price = annual_price
                 except Exception as exc:
                     _LOGGER.warning(
                         "SUEZ multi-year Recorder summary unavailable: %s: %s",
