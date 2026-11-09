@@ -45,7 +45,11 @@ class SuezCoordinator(DataUpdateCoordinator):
             # Missing days are retried every polling interval.
             target_day = today - timedelta(days=2)
             if self._recent_cache_day != today:
-                self._recent_cache = await self._persistent_cache.async_load(today)
+                try:
+                    self._recent_cache = await self._persistent_cache.async_load(today)
+                except Exception as exc:
+                    self._recent_cache = None
+                    _LOGGER.warning("SUEZ daily cache load failed: %s: %s", type(exc).__name__, exc)
                 self._recent_cache_day = today
             if (
                 self._recent_cache_day == today
