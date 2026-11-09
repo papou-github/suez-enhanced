@@ -34,15 +34,15 @@ async def async_discover_older_history(hass, entry) -> None:
     for year in range(today.year - MAX_YEARS, today.year + 1):
         readings = await async_recorder_daily_readings(hass, counter, year)
         if readings:
-            first = min(r.day for r in readings)
-            break
+            candidate = min(r.day for r in readings)
+            first = min(first, candidate) if first is not None else candidate
     if first is None:
         _LOGGER.warning("SUEZ older-history discovery skipped: no Recorder anchor")
         return
     floor = today - timedelta(days=365 * MAX_YEARS)
     stored = await archive.load()
     end = date.fromisoformat(stored["cursor"]) - timedelta(days=1) if stored["cursor"] else first - timedelta(days=1)
-    empty = 0
+    empty = stored["empty_windows"]
     while end >= floor and empty < EMPTY_LIMIT:
         if entry.options.get("older_history_import_enabled", False) is not True:
             return
@@ -54,8 +54,8 @@ async def async_discover_older_history(hass, entry) -> None:
             # Only commit after a successful API response. An empty response
             # advances the checkpoint but never means 'all history exhausted'.
             valid = [m for m in measures if getattr(m, "volume", None) is not None and start <= m.date <= end]
-            await archive.save_window(start, end, valid)
-            empty = 0 if valid else empty + 1
+            stored = await archive.save_window(start, end, valid)
+            empty = stored["empty_windows"]
             _LOGGER.info("SUEZ historical archive scanned %s..%s: %d readings", start, end, len(valid))
         except asyncio.CancelledError:
             raise
