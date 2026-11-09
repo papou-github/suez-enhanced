@@ -13,6 +13,7 @@ from .statistics_sync import async_continue_history, async_last_history_day
 from .consumption import consumption_summary
 from .cost_history import cost_history
 from .recorder_history import async_recorder_daily_readings
+from .history import daily_readings
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -36,8 +37,8 @@ class SuezCoordinator(DataUpdateCoordinator):
             "history_pending_days": None,
             "history_status": "not_checked",
         }
+        connected = False
         try:
-            await client._connect()
             # Avoid repeat downloads once the latest eligible day is available.
             # Missing days are retried every polling interval.
             target_day = today - timedelta(days=2)
@@ -51,6 +52,8 @@ class SuezCoordinator(DataUpdateCoordinator):
             ):
                 recent = self._recent_cache
             else:
+                await client._connect()
+                connected = True
                 recent = await client.fetch_telemetry(
                     TelemetryMode.DAILY, today - timedelta(days=35), today
                 )
@@ -87,6 +90,9 @@ class SuezCoordinator(DataUpdateCoordinator):
                         )
                         while cursor < earliest:
                             end = min(cursor + timedelta(days=FETCH_WINDOW_DAYS), earliest)
+                            if not connected:
+                                await client._connect()
+                                connected = True
                             measures.extend(await client.fetch_telemetry(
                                 TelemetryMode.DAILY, cursor, end
                             ))
@@ -135,16 +141,27 @@ class SuezCoordinator(DataUpdateCoordinator):
                 )
                 # Fresh API values take precedence over recorded values for the
                 # overlapping recent period, without rewriting old statistics.
-                year_measures = [
-                    type("Measure", (), {
+                # Merge by day: prefer API readings where available, but
+                # retain Recorder readings for any gaps in the API response.
+                # This avoids a false gap in annual charts after a transient
+                # SUEZ omission. Never rewrite existing Recorder statistics.
+                year_by_day = {
+                    reading.day: type("Measure", (), {
                         "date": reading.day,
                         "volume": reading.liters,
                         "index": reading.meter_index_liters,
                     })()
                     for reading in recorded
-                    if reading.day < today - timedelta(days=35)
-                ]
-                year_measures.extend(recent)
+                }
+                year_by_day.update({
+                    reading.day: type("Measure", (), {
+                        "date": reading.day,
+                        "volume": reading.liters,
+                        "index": reading.meter_index_liters,
+                    })()
+                    for reading in daily_readings(recent)
+                })
+                year_measures = list(year_by_day.values())
                 year_summary = consumption_summary(
                     year_measures, today,
                     float(self.entry.options.get("price_per_m3", 0.0)),
@@ -177,7 +194,8 @@ class SuezCoordinator(DataUpdateCoordinator):
         except Exception as exc:
             raise UpdateFailed(f"SUEZ API request failed: {type(exc).__name__}") from exc
         finally:
-            await client.close_session()
+            if connected:
+                await client.close_session()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
