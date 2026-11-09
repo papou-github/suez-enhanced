@@ -53,9 +53,10 @@ class SuezCoordinator(DataUpdateCoordinator):
         }
         connected = False
         try:
-            # Avoid repeat downloads once the latest eligible day is available.
-            # Missing days are retried every polling interval.
-            target_day = today - timedelta(days=2)
+            # Avoid repeat downloads once yesterday is available.
+            # Missing yesterday is retried every polling interval.
+            # Prefer yesterday when published; otherwise retry until it appears.
+            target_day = today - timedelta(days=1)
             if self._recent_cache_day != today:
                 try:
                     self._recent_cache = await self._persistent_cache.async_load(today)
