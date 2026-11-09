@@ -24,6 +24,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ("history_last_day", "Last historical day"),
             ("history_pending_days", "Historical days pending"),
             ("history_status", "History sync status"),
+            ("archive_oldest_day", "Oldest archived day"),
+            ("archive_reading_days", "Archived reading days"),
+            ("archive_scan_cursor", "Archive scan cursor"),
+            ("archive_empty_windows", "Archive empty windows"),
         )
     )
     sensors.extend(
