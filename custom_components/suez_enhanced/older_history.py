@@ -17,6 +17,7 @@ WINDOW = 14
 PAUSE = 300
 MAX_YEARS = 5
 EMPTY_LIMIT = 4
+RETRY_SECONDS = 3600
 
 
 async def async_discover_older_history(hass, entry) -> None:
@@ -62,8 +63,9 @@ async def async_discover_older_history(hass, entry) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            _LOGGER.exception("SUEZ older-history discovery paused at %s", start)
-            return
+            _LOGGER.exception("SUEZ older-history discovery retry scheduled at %s", start)
+            await asyncio.sleep(RETRY_SECONDS)
+            continue
         finally:
             await client.close_session()
         end = start - timedelta(days=1)
