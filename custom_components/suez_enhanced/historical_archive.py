@@ -38,8 +38,8 @@ class HistoricalArchive:
 
     async def save_window(self, start: date, end: date, measures) -> dict:
         """Commit one scanned window, even when it contains no valid readings."""
-        if end < start or (end - start).days > 14:
-            raise ValueError("Archive window must be at most 15 calendar days")
+        if end < start or (end - start).days >= 14:
+            raise ValueError("Archive window must be at most 14 calendar days")
         data = await self.load()
         # Historical values are immutable in this first implementation.
         # Conflicts are logged by the caller and never silently overwritten.
