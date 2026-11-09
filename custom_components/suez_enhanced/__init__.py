@@ -17,6 +17,7 @@ from .recorder_history import async_recorder_daily_readings, async_recorder_mult
 from .history import daily_readings
 from .daily_cache import DailyTelemetryCache
 from .backfill import async_forward_backfill
+from .older_history import async_discover_older_history
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -29,6 +30,7 @@ class SuezCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self.history_lock = asyncio.Lock()
         self.backfill_task = None
+        self.older_history_task = None
         self._multi_year_cache_day = None
         self._multi_year_cache = {}
         self._recent_cache_day = None
@@ -237,6 +239,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_forward_backfill(hass, entry, coordinator.history_lock),
         f"suez_enhanced_backfill_{entry.entry_id}",
     )
+    if entry.options.get("older_history_import_enabled", False) is True:
+        coordinator.older_history_task = hass.async_create_background_task(
+            async_discover_older_history(hass, entry),
+            f"suez_enhanced_older_history_{entry.entry_id}",
+        )
     return True
 
 
@@ -246,5 +253,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator = hass.data[DOMAIN][entry.entry_id]
         if coordinator.backfill_task is not None:
             coordinator.backfill_task.cancel()
+        if coordinator.older_history_task is not None:
+            coordinator.older_history_task.cancel()
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return ok
