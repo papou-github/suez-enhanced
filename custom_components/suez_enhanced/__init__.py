@@ -19,6 +19,7 @@ from .daily_cache import DailyTelemetryCache
 from .backfill import async_forward_backfill
 from .older_history import async_discover_older_history
 from .historical_archive import HistoricalArchive
+from .full_history_statistics import async_sync_full_history
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -32,6 +33,7 @@ class SuezCoordinator(DataUpdateCoordinator):
         self.history_lock = asyncio.Lock()
         self.backfill_task = None
         self.older_history_task = None
+        self.full_history_task = None
         self._multi_year_cache_day = None
         self._multi_year_cache = {}
         self._multi_year_archive_cursor = None
@@ -252,6 +254,31 @@ class SuezCoordinator(DataUpdateCoordinator):
                 await client.close_session()
 
 
+async def _async_full_history_after_discovery(hass, entry, lock):
+    """Only start new Recorder series after bounded discovery completes."""
+    from datetime import date
+    try:
+        await async_discover_older_history(hass, entry)
+        archive = await HistoricalArchive(
+            hass, entry.entry_id, entry.data[CONF_COUNTER_ID]
+        ).load()
+        today = dt_util.now().date()
+        floor = today - timedelta(days=365 * 5)
+        cursor = archive.get("cursor")
+        exhausted = archive.get("empty_windows", 0) >= 4
+        reached_floor = cursor is not None and date.fromisoformat(cursor) <= floor
+        if not (exhausted or reached_floor):
+            _LOGGER.warning(
+                "SUEZ full-history Recorder import postponed: older API scan incomplete"
+            )
+            return
+        await async_sync_full_history(hass, entry, lock)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        _LOGGER.exception("SUEZ full-history background worker failed")
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = SuezCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
@@ -263,7 +290,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     if entry.options.get("older_history_import_enabled", False) is True:
         coordinator.older_history_task = hass.async_create_background_task(
-            async_discover_older_history(hass, entry),
+            _async_full_history_after_discovery(hass, entry, coordinator.history_lock),
             f"suez_enhanced_older_history_{entry.entry_id}",
         )
     return True
