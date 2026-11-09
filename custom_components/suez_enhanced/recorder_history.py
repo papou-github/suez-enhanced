@@ -38,3 +38,39 @@ async def async_recorder_daily_readings(hass, counter_id: str, year: int) -> lis
         if day.year == year:
             readings[day] = DailyReading(day, float(value), None)
     return sorted(readings.values(), key=lambda reading: reading.day)
+
+
+async def async_recorder_multi_year_summary(hass, counter_id: str, first_year: int, last_year: int, price_per_m3: float) -> dict:
+    """Summarize recorded days by calendar year, without modifying statistics.
+
+    Only confirmed Recorder days are counted. Incomplete years are explicitly
+    marked and never represented as a complete year's consumption.
+    """
+    from datetime import date
+    from calendar import isleap
+    from math import isfinite
+
+    if first_year > last_year or last_year - first_year > 20:
+        raise ValueError("Invalid multi-year summary range")
+    if not isfinite(price_per_m3) or price_per_m3 < 0:
+        raise ValueError("Invalid price")
+    result = {}
+    for year in range(first_year, last_year + 1):
+        readings = await async_recorder_daily_readings(hass, counter_id, year)
+        if not readings:
+            continue
+        liters = sum(r.liters for r in readings)
+        expected_days = 366 if isleap(year) else 365
+        days = {r.day for r in readings}
+        result[str(year)] = {
+            "liters": round(liters, 3),
+            "m3": round(liters / 1000, 3),
+            "estimated_cost_eur": round(liters / 1000 * price_per_m3, 2)
+                if price_per_m3 > 0 else None,
+            "recorded_days": len(days),
+            "expected_days": expected_days,
+            "complete": len(days) == expected_days,
+            "first_day": min(days).isoformat(),
+            "last_day": max(days).isoformat(),
+        }
+    return result
