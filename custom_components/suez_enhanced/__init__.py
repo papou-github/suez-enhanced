@@ -233,6 +233,10 @@ class SuezCoordinator(DataUpdateCoordinator):
                         type(exc).__name__, exc,
                     )
             summary["multi_year_summary"] = self._multi_year_cache
+            diagnostics["archive_oldest_day"] = min(archive_data["days"], default=None)
+            diagnostics["archive_reading_days"] = len(archive_data["days"])
+            diagnostics["archive_scan_cursor"] = archive_cursor
+            diagnostics["archive_empty_windows"] = archive_data.get("empty_windows", 0)
             return {
                 **summary,
                 "index": latest.index / 1000,
