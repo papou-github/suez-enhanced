@@ -1,5 +1,6 @@
 """SUEZ Enhanced integration."""
 from datetime import timedelta
+import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -15,6 +16,7 @@ from .cost_history import cost_history
 from .recorder_history import async_recorder_daily_readings
 from .history import daily_readings
 from .daily_cache import DailyTelemetryCache
+from .backfill import async_forward_backfill
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BACKFILL_DAYS = 365
@@ -25,6 +27,8 @@ class SuezCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry):
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(hours=6))
         self.entry = entry
+        self.history_lock = asyncio.Lock()
+        self.backfill_task = None
         self._recent_cache_day = None
         self._recent_cache = None
         self._persistent_cache = DailyTelemetryCache(hass, entry.entry_id, entry.data[CONF_COUNTER_ID])
@@ -94,29 +98,23 @@ class SuezCoordinator(DataUpdateCoordinator):
                     diagnostics["history_pending_days"] = max(
                         0, (today - timedelta(days=2) - last_day).days
                     )
-                    measures = list(recent)
+                    # Long gaps are recovered by the bounded background worker.
+                    # Never block coordinator startup with many API windows.
                     earliest = today - timedelta(days=35)
-                    if last_day < earliest:
-                        # Fetch older windows chronologically, bounded to a year.
-                        cursor = max(
-                            last_day - timedelta(days=1),
-                            today - timedelta(days=MAX_BACKFILL_DAYS),
-                        )
-                        while cursor < earliest:
-                            end = min(cursor + timedelta(days=FETCH_WINDOW_DAYS), earliest)
-                            if not connected:
-                                await client._connect()
-                                connected = True
-                            measures.extend(await client.fetch_telemetry(
-                                TelemetryMode.DAILY, cursor, end
-                            ))
-                            cursor = end
                     write = self.entry.options.get("history_sync_enabled", True) is True
-                    preview = await async_continue_history(
-                        self.hass, str(data[CONF_COUNTER_ID]), measures, write=write
-                    )
+                    if last_day < earliest - timedelta(days=1):
+                        diagnostics["history_status"] = (
+                            "backfill_pending" if write else "disabled"
+                        )
+                        preview = {"new_days": 0}
+                    else:
+                        async with self.history_lock:
+                            preview = await async_continue_history(
+                                self.hass, str(data[CONF_COUNTER_ID]), recent, write=write
+                            )
                     diagnostics["history_status"] = (
-                        "import_requested" if write and preview["new_days"]
+                        "backfill_pending" if last_day < earliest - timedelta(days=1) and write
+                        else "import_requested" if write and preview["new_days"]
                         else "disabled" if not write else "up_to_date"
                     )
                     diagnostics["history_pending_days"] = max(
@@ -217,11 +215,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    coordinator.backfill_task = hass.async_create_background_task(
+        async_forward_backfill(hass, entry, coordinator.history_lock),
+        f"suez_enhanced_backfill_{entry.entry_id}",
+    )
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        if coordinator.backfill_task is not None:
+            coordinator.backfill_task.cancel()
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return ok
