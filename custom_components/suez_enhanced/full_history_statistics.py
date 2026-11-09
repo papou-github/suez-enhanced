@@ -40,6 +40,7 @@ def select_new_statistics(
         raise ValueError("Invalid batch size")
     if not readings:
         return []
+
     for day, liters in readings.items():
         if not isinstance(day, date) or not isinstance(liters, (int, float)) or not isfinite(liters) or liters < 0:
             raise ValueError("Invalid historical reading")
@@ -83,6 +84,9 @@ async def async_append_full_history(hass, counter_id: str, readings: dict[date, 
         unit_of_measurement=UnitOfVolume.LITERS,
     )
     async_add_external_statistics(hass, metadata, batch)
+    # Recorder enqueues writes asynchronously; do not immediately read the
+    # checkpoint and accidentally queue the same batch a second time.
+    await get_instance(hass).async_block_till_done()
     return len(batch)
 
 async def async_sync_full_history(hass, entry, history_lock, *, pause_seconds: int = 300) -> None:
