@@ -15,6 +15,7 @@ from .consumption import consumption_summary
 from .cost_history import cost_history
 from .recorder_history import async_recorder_daily_readings, async_recorder_multi_year_summary
 from .history import daily_readings
+from .year_merge import merge_year_readings
 from .daily_cache import DailyTelemetryCache
 from .backfill import async_forward_backfill
 from .older_history import async_discover_older_history
@@ -162,29 +163,10 @@ class SuezCoordinator(DataUpdateCoordinator):
                 recorded = await async_recorder_daily_readings(
                     self.hass, str(data[CONF_COUNTER_ID]), today.year
                 )
-                # Fresh API values take precedence over recorded values for the
-                # overlapping recent period, without rewriting old statistics.
-                # Merge by day: prefer API readings where available, but
-                # retain Recorder readings for any gaps in the API response.
-                # This avoids a false gap in annual charts after a transient
-                # SUEZ omission. Never rewrite existing Recorder statistics.
-                year_by_day = {
-                    reading.day: type("Measure", (), {
-                        "date": reading.day,
-                        "volume": reading.liters,
-                        "index": reading.meter_index_liters,
-                    })()
-                    for reading in recorded
-                }
-                year_by_day.update({
-                    reading.day: type("Measure", (), {
-                        "date": reading.day,
-                        "volume": reading.liters,
-                        "index": reading.meter_index_liters,
-                    })()
-                    for reading in daily_readings(recent)
-                })
-                year_measures = list(year_by_day.values())
+                # Recorder is canonical for days already imported.
+                # Recent API telemetry only fills missing Recorder dates;
+                # never silently replace historical daily values.
+                year_measures = merge_year_readings(recorded, daily_readings(recent))
                 year_summary = consumption_summary(
                     year_measures, today,
                     float(self.entry.options.get("price_per_m3", 0.0)),
