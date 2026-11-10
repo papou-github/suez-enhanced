@@ -10,6 +10,7 @@ from homeassistant.components.recorder.statistics import statistics_during_perio
 
 from .history import DailyReading
 from .statistics_sync import legacy_statistic_id
+from .full_history_statistics import full_history_statistic_id
 
 PARIS = ZoneInfo("Europe/Paris")
 
@@ -19,25 +20,30 @@ async def async_recorder_daily_readings(hass, counter_id: str, year: int) -> lis
     start = datetime(year, 1, 1, tzinfo=PARIS).astimezone(timezone.utc) - timedelta(days=2)
     # Dec 31 consumption is stored at midnight Jan 1 of the next year.
     end = datetime(year + 1, 1, 2, tzinfo=PARIS).astimezone(timezone.utc)
-    statistic_id = legacy_statistic_id(counter_id)
+    legacy_id = legacy_statistic_id(counter_id)
+    full_id = full_history_statistic_id(counter_id)
     result = await get_instance(hass).async_add_executor_job(
-        statistics_during_period, hass, start, end, {statistic_id}, "hour", None, {"state"}
+        statistics_during_period, hass, start, end, {legacy_id, full_id}, "hour", None, {"state"}
     )
     readings = {}
-    for record in result.get(statistic_id, []):
-        timestamp = record.get("start")
-        value = record.get("state")
-        if timestamp is None or not isinstance(value, (int, float)):
-            continue
-        if not isfinite(value) or value < 0:
-            continue
-        local_start = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(PARIS)
-        # Existing SUEZ statistics use next-day Paris midnight as their start.
-        if local_start.time() != datetime.min.time():
-            continue
-        day = local_start.date() - timedelta(days=1)
-        if day.year == year:
-            readings[day] = DailyReading(day, float(value), None)
+    # Preserve legacy coverage while using the independently reconstructed
+    # daily values where available. Never derive consumption from legacy sum:
+    # historical month-end sums may contain duplicate daily consumption.
+    for statistic_id in (legacy_id, full_id):
+        for record in result.get(statistic_id, []):
+            timestamp = record.get("start")
+            value = record.get("state")
+            if timestamp is None or not isinstance(value, (int, float)):
+                continue
+            if not isfinite(value) or value < 0:
+                continue
+            local_start = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(PARIS)
+            # Daily consumption is timestamped at next-day Paris midnight.
+            if local_start.time() != datetime.min.time():
+                continue
+            day = local_start.date() - timedelta(days=1)
+            if day.year == year:
+                readings[day] = DailyReading(day, float(value), None)
     return sorted(readings.values(), key=lambda reading: reading.day)
 
 
