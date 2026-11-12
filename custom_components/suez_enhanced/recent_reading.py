@@ -1,7 +1,6 @@
 """Identify a provisional zero in the most recent SUEZ daily telemetry."""
 from datetime import date, datetime
 from math import isfinite
-from types import SimpleNamespace
 
 
 def confirmed_yesterday(measures, target_day: date):
