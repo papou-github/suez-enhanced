@@ -33,14 +33,16 @@ def consumption_summary(measures: list, today: date, price_per_m3: float) -> dic
     def period_cost(days):
         if any(day not in readings for day in days):
             return None
+        if not any(tariff.price(day) > 0 for day in days):
+            return None
         return round(tariff.cost({day: readings[day] for day in days}), 2)
 
     yesterday_cost = (round(yesterday_liters / 1000 * tariff.price(today - timedelta(days=1)), 2)
-                      if yesterday_liters is not None else None)
+                      if yesterday_liters is not None and tariff.price(today - timedelta(days=1)) > 0 else None)
     week_cost = period_cost(week)
     # Annual projection uses the tariff effective on the latest eligible day.
     annual_projection = (round(week_liters / 7 * 365 / 1000 * tariff.price(cutoff), 2)
-                         if week_liters is not None else None)
+                         if week_liters is not None and tariff.price(cutoff) > 0 else None)
 
     return {
         "consumption_7d_liters": week_liters,
