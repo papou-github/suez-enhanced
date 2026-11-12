@@ -18,6 +18,7 @@ from .history import daily_readings
 from .year_merge import merge_year_readings
 from .tariffs import TariffSchedule
 from .daily_cache import DailyTelemetryCache
+from .recent_reading import confirmed_yesterday, without_provisional_yesterday
 from .backfill import async_forward_backfill
 from .older_history import async_discover_older_history
 from .historical_archive import HistoricalArchive
@@ -75,10 +76,7 @@ class SuezCoordinator(DataUpdateCoordinator):
             if (
                 self._recent_cache_day == today
                 and self._recent_cache is not None
-                and any(
-                    m.date == target_day and m.volume is not None
-                    for m in self._recent_cache
-                )
+                and confirmed_yesterday(self._recent_cache, target_day) is not None
             ):
                 recent = self._recent_cache
             else:
@@ -98,9 +96,10 @@ class SuezCoordinator(DataUpdateCoordinator):
                     await self._persistent_cache.async_save(today, recent)
                 except Exception as exc:
                     _LOGGER.warning("SUEZ daily cache save failed: %s: %s", type(exc).__name__, exc)
-            yesterday = next(
-                (m for m in recent if m.date == today - timedelta(days=1)), None
-            )
+            yesterday = confirmed_yesterday(recent, target_day)
+            # An unindexed zero for yesterday is provisional, not 0 L usage.
+            # Do not pass it to costs or consumption summaries either.
+            confirmed_recent = without_provisional_yesterday(recent, target_day)
             diagnostics["last_reading_day"] = latest.date.isoformat()
             diagnostics["last_sync"] = dt_util.utcnow().isoformat()
 
@@ -146,7 +145,7 @@ class SuezCoordinator(DataUpdateCoordinator):
                 )
             try:
                 summary = consumption_summary(
-                    recent, today, tariff
+                    confirmed_recent, today, tariff
                 )
             except (ValueError, TypeError) as exc:
                 _LOGGER.warning("SUEZ consumption summary unavailable: %s", exc)
@@ -171,7 +170,7 @@ class SuezCoordinator(DataUpdateCoordinator):
                 # Recorder is canonical for days already imported.
                 # Recent API telemetry only fills missing Recorder dates;
                 # never silently replace historical daily values.
-                year_measures = merge_year_readings(recorded, daily_readings(recent))
+                year_measures = merge_year_readings(recorded, daily_readings(confirmed_recent))
                 year_summary = consumption_summary(
                     year_measures, today,
                     tariff,
