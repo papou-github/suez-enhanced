@@ -20,18 +20,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "SUEZ history synchronization",
+        "title": "SUEZ Enhanced configuration",
         "data": {
           "history_sync_enabled": "Automatic historical statistics synchronization",
           "price_per_m3": "Water price (€/m³)",
-          "tariff_history": "Historical tariffs (date;price per line)",
+          "tariff_history": "Tariff history (YYYY-MM-DD;price)",
           "older_history_import_enabled": "Import older history"
         },
         "data_description": {
           "history_sync_enabled": "Continue compatible SUEZ historical statistics after a two-day safety delay.",
           "price_per_m3": "Estimated EUR per cubic meter, optionally including wastewater charges. Set 0 to disable cost estimate.",
           "tariff_history": "One change per line: YYYY-MM-DD;8.40. Dates before the first change use the base price. No fixed subscription charges."
-        }
+        },
+        "description": "**Historical water prices (per m³)**\\n\\nEnter **one tariff change per line** in the field below using `YYYY-MM-DD;price`.\\n\\nExample:\\n```text\\n2025-01-01;7.92\\n2026-01-01;8.40\\n```\\n\\nEach price applies from its effective date until the next change. Before the first date, the base price is used. Fixed subscription charges are excluded."
       }
     },
     "error": {
