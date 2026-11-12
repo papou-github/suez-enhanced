@@ -5,12 +5,12 @@ from datetime import date, timedelta
 from math import isfinite
 
 from .history import daily_readings
+from .tariffs import TariffSchedule
 
 
 def consumption_summary(measures: list, today: date, price_per_m3: float) -> dict:
     """Return None for incomplete periods, never interpret missing days as zero."""
-    if not isfinite(price_per_m3) or price_per_m3 < 0:
-        raise ValueError("Water price must be a finite non-negative number")
+    tariff = price_per_m3 if isinstance(price_per_m3, TariffSchedule) else TariffSchedule(price_per_m3)
     readings = {r.day: r.liters for r in daily_readings(measures)}
     cutoff = today - timedelta(days=2)
     week = [cutoff - timedelta(days=offset) for offset in range(6, -1, -1)]
@@ -30,18 +30,27 @@ def consumption_summary(measures: list, today: date, price_per_m3: float) -> dic
     yesterday_liters = readings.get(today - timedelta(days=1))
     # SUEZ data is commonly delayed by two days. Do not silently substitute
     # the last confirmed day for yesterday.
-    def cost(liters):
-        return round(liters / 1000 * price_per_m3, 2) if liters is not None and price_per_m3 > 0 else None
+    def period_cost(days):
+        if any(day not in readings for day in days):
+            return None
+        return round(tariff.cost({day: readings[day] for day in days}), 2)
+
+    yesterday_cost = (round(yesterday_liters / 1000 * tariff.price(today - timedelta(days=1)), 2)
+                      if yesterday_liters is not None else None)
+    week_cost = period_cost(week)
+    # Annual projection uses the tariff effective on the latest eligible day.
+    annual_projection = (round(week_liters / 7 * 365 / 1000 * tariff.price(cutoff), 2)
+                         if week_liters is not None else None)
 
     return {
         "consumption_7d_liters": week_liters,
         "consumption_month_liters": month_liters,
         "average_daily_liters": round(week_liters / 7, 3) if week_liters is not None else None,
-        "estimated_yesterday_cost_eur": cost(yesterday_liters),
-        "estimated_7d_cost_eur": cost(week_liters),
-        "estimated_month_cost_eur": cost(month_liters),
-        "estimated_year_to_date_cost_eur": cost(year_liters),
-        "estimated_annual_cost_eur": cost(week_liters / 7 * 365) if week_liters is not None else None,
+        "estimated_yesterday_cost_eur": yesterday_cost,
+        "estimated_7d_cost_eur": week_cost,
+        "estimated_month_cost_eur": period_cost(month),
+        "estimated_year_to_date_cost_eur": period_cost(year_days),
+        "estimated_annual_cost_eur": annual_projection,
         "consumption_period_end": cutoff.isoformat(),
         "consumption_month_start": month_start.isoformat(),
         "consumption_year_start": year_start.isoformat(),
