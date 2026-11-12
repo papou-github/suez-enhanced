@@ -20,18 +20,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Synchronisation de l'historique SUEZ",
+        "title": "Configuration SUEZ Enhanced",
         "data": {
           "history_sync_enabled": "Synchronisation historique automatique",
           "price_per_m3": "Prix de l'eau (€/m³)",
-          "tariff_history": "Historique des tarifs (date;prix par ligne)",
+          "tariff_history": "Historique des tarifs (YYYY-MM-DD;prix)",
           "older_history_import_enabled": "Importer l'historique ancien"
         },
         "data_description": {
           "history_sync_enabled": "Prolonge les statistiques SUEZ existantes après un délai de sécurité de deux jours.",
           "price_per_m3": "Tarif estimatif par m³, eau et assainissement inclus si souhaité. 0 désactive l'estimation du coût.",
           "tariff_history": "Une ligne par changement : AAAA-MM-JJ;8,40. Les dates antérieures au premier changement utilisent le prix de base. Aucun abonnement fixe."
-        }
+        },
+        "description": "**Historique des tarifs du m³**\\n\\nDans le champ ci-dessous, saisissez **une ligne par changement de tarif** au format `YYYY-MM-DD;prix`.\\n\\nExemple :\\n```text\\n2025-01-01;7.92\\n2026-01-01;8.40\\n```\\n\\nChaque prix s'applique à partir de sa date jusqu'au changement suivant. Avant la première date, le tarif de base est utilisé. Aucun abonnement fixe n'est inclus."
       }
     },
     "error": {
