@@ -16,6 +16,7 @@ from .cost_history import cost_history
 from .recorder_history import async_recorder_daily_readings, async_recorder_multi_year_summary
 from .history import daily_readings
 from .year_merge import merge_year_readings
+from .tariffs import TariffSchedule
 from .daily_cache import DailyTelemetryCache
 from .backfill import async_forward_backfill
 from .older_history import async_discover_older_history
@@ -55,6 +56,10 @@ class SuezCoordinator(DataUpdateCoordinator):
             "history_status": "not_checked",
         }
         connected = False
+        tariff = TariffSchedule(
+            self.entry.options.get("price_per_m3", 0.0),
+            self.entry.options.get("tariff_history", ""),
+        )
         try:
             # Avoid repeat downloads once yesterday is available.
             # Missing yesterday is retried every polling interval.
@@ -141,7 +146,7 @@ class SuezCoordinator(DataUpdateCoordinator):
                 )
             try:
                 summary = consumption_summary(
-                    recent, today, float(self.entry.options.get("price_per_m3", 0.0))
+                    recent, today, tariff
                 )
             except (ValueError, TypeError) as exc:
                 _LOGGER.warning("SUEZ consumption summary unavailable: %s", exc)
@@ -169,13 +174,13 @@ class SuezCoordinator(DataUpdateCoordinator):
                 year_measures = merge_year_readings(recorded, daily_readings(recent))
                 year_summary = consumption_summary(
                     year_measures, today,
-                    float(self.entry.options.get("price_per_m3", 0.0)),
+                    tariff,
                 )
                 summary["estimated_year_to_date_cost_eur"] = year_summary["estimated_year_to_date_cost_eur"]
                 summary["consumption_year_start"] = year_summary["consumption_year_start"]
                 summary.update(cost_history(
                     year_measures, today,
-                    float(self.entry.options.get("price_per_m3", 0.0)),
+                    tariff,
                 ))
                 _LOGGER.debug(
                     "SUEZ year history: %d days read from Recorder",
@@ -198,7 +203,7 @@ class SuezCoordinator(DataUpdateCoordinator):
                 archive_data = {"days": {}, "cursor": None}
                 archive_cursor = None
                 _LOGGER.warning("SUEZ historical archive unavailable: %s: %s", type(exc).__name__, exc)
-            annual_price = float(self.entry.options.get("price_per_m3", 0.0))
+            annual_price = tariff
             if (self._multi_year_cache_day != today
                     or self._multi_year_archive_cursor != archive_cursor
                     or self._multi_year_price != annual_price):
