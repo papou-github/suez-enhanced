@@ -1,9 +1,11 @@
 """UI setup for SUEZ Enhanced."""
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.helpers import selector
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 from pysuez.suez_client import SuezClient
 from .const import DOMAIN, CONF_COUNTER_ID
+from .tariffs import parse_tariffs
 
 class SuezEnhancedConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
@@ -37,16 +39,24 @@ class SuezEnhancedOptionsFlow(config_entries.OptionsFlow):
     """Allow users to disable automatic historical continuity."""
 
     async def async_step_init(self, user_input=None):
+        errors = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            try:
+                parse_tariffs(user_input.get("tariff_history", ""))
+            except ValueError:
+                errors["tariff_history"] = "invalid_tariff_history"
+            else:
+                return self.async_create_entry(title="", data=user_input)
         return self.async_show_form(
             step_id="init",
+            errors=errors,
             data_schema=vol.Schema({
                 vol.Required(
                     "history_sync_enabled",
                     default=self.config_entry.options.get("history_sync_enabled", True),
                 ): bool,
                 vol.Required("price_per_m3", default=self.config_entry.options.get("price_per_m3", 0.0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+                vol.Optional("tariff_history", default=(user_input or self.config_entry.options).get("tariff_history", "")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
                 vol.Required("older_history_import_enabled", default=self.config_entry.options.get("older_history_import_enabled", False)): bool,
             }),
         )
