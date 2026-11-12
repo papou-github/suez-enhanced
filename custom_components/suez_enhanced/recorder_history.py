@@ -62,7 +62,7 @@ def summarize_calendar_year(readings_by_day: dict, year: int, price_per_m3: floa
     return {
         "liters": round(total, 3),
         "m3": round(total / 1000, 3),
-        "estimated_cost_eur": round(tariff.cost(days), 2),
+        "estimated_cost_eur": round(tariff.cost(days), 2) if any(tariff.price(day) > 0 for day in days) else None,
         "recorded_days": len(days),
         "expected_days": expected,
         "complete": len(days) == expected,
