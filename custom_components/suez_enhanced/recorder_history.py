@@ -9,6 +9,7 @@ from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.statistics import statistics_during_period
 
 from .history import DailyReading
+from .tariffs import TariffSchedule
 from .statistics_sync import legacy_statistic_id
 from .full_history_statistics import full_history_statistic_id
 
@@ -56,12 +57,12 @@ def summarize_calendar_year(readings_by_day: dict, year: int, price_per_m3: floa
     if not days:
         return None
     total = sum(days.values())
+    tariff = price_per_m3 if isinstance(price_per_m3, TariffSchedule) else TariffSchedule(price_per_m3)
     expected = 366 if isleap(year) else 365
     return {
         "liters": round(total, 3),
         "m3": round(total / 1000, 3),
-        "estimated_cost_eur": round(total / 1000 * price_per_m3, 2)
-            if price_per_m3 > 0 else None,
+        "estimated_cost_eur": round(tariff.cost(days), 2),
         "recorded_days": len(days),
         "expected_days": expected,
         "complete": len(days) == expected,
@@ -79,8 +80,7 @@ async def async_recorder_multi_year_summary(
 
     if first_year > last_year or last_year - first_year >= 20:
         raise ValueError("Invalid multi-year summary range")
-    if not isfinite(price_per_m3) or price_per_m3 < 0:
-        raise ValueError("Invalid price")
+    tariff = price_per_m3 if isinstance(price_per_m3, TariffSchedule) else TariffSchedule(price_per_m3)
     archive_days = archive_days or {}
     archive = {}
     for day_text, liters in archive_days.items():
@@ -95,7 +95,7 @@ async def async_recorder_multi_year_summary(
         recorded = await async_recorder_daily_readings(hass, counter_id, year)
         # Recorder wins on overlap; archive never changes Recorder values.
         days.update({reading.day: reading.liters for reading in recorded})
-        summary = summarize_calendar_year(days, year, price_per_m3)
+        summary = summarize_calendar_year(days, year, tariff)
         if summary is not None:
             summary["recorder_days"] = len(recorded)
             summary["archive_only_days"] = len(days) - len(recorded)
