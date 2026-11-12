@@ -9,7 +9,11 @@ SOURCE = Path(__file__).resolve().parents[1] / "custom_components" / "suez_enhan
 tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
 node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "summarize_calendar_year")
 module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
-namespace = {}
+from importlib.util import spec_from_file_location, module_from_spec
+spec = spec_from_file_location("standalone_tariffs_calendar", SOURCE.with_name("tariffs.py"))
+tariff_module = module_from_spec(spec)
+spec.loader.exec_module(tariff_module)
+namespace = {"TariffSchedule": tariff_module.TariffSchedule}
 exec(compile(module, str(SOURCE), "exec"), namespace)
 summarize = namespace["summarize_calendar_year"]
 
